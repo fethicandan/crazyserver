@@ -3,8 +3,8 @@ package crazyserver
 import (
 	"log"
 
-	"github.com/mikehamer/crazyradio/crazyflie"
-	"github.com/mikehamer/crazyradio/crazyradio"
+	"github.com/mikehamer/crazyserver/crazyflie"
+	"github.com/mikehamer/crazyserver/crazyradio"
 )
 
 var radio *crazyradio.RadioDevice

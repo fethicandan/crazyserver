@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/mikehamer/crazyradio/crazyserver"
+	"github.com/mikehamer/crazyserver/crazyserver"
 )
 
 func main() {

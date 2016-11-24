@@ -4,7 +4,7 @@ import (
 	"container/list"
 	"time"
 
-	"github.com/mikehamer/crazyradio/crazyradio"
+	"github.com/mikehamer/crazyserver/crazyradio"
 )
 
 type Crazyflie struct {
