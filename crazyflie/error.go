@@ -10,8 +10,18 @@ func (e crazyflieError) Error() string {
 
 const (
 	ErrorNoResponse crazyflieError = iota
+	ErrorLogItemNotFound
+	ErrorLogBlockNoMemory
+	ErrorLogBlockTooLong
+
+	ErrorUnknown
 )
 
 var radioErrorString = map[crazyflieError]string{
-	ErrorNoResponse: "not responding",
+	ErrorNoResponse:       "not responding",
+	ErrorLogItemNotFound:  "requesting log block for unknown log entry",
+	ErrorLogBlockNoMemory: "no memory to allocated log block",
+	ErrorLogBlockTooLong:  "log block is too long",
+
+	ErrorUnknown: "an unknown error occurred",
 }

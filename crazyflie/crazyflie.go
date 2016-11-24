@@ -30,6 +30,7 @@ type Crazyflie struct {
 	logMaxOps      uint8
 	logNameToIndex map[string]logItem
 	logIndexToName map[uint8]string
+	logBlocks      map[int]logBlock
 
 	// parameters
 	paramCount int
@@ -101,6 +102,7 @@ func Connect(radio *crazyradio.RadioDevice, address uint64) (*Crazyflie, error) 
 
 		cf.logNameToIndex = make(map[string]logItem)
 		cf.logIndexToName = make(map[uint8]string)
+		cf.logBlocks = make(map[int]logBlock)
 
 		// start the crazyflie's communications thread
 		go cf.communicationLoop()
