@@ -98,14 +98,14 @@ func Connect(radio *crazyradio.RadioDevice, address uint64) (*Crazyflie, error) 
 			crtpPortEmpty1:   list.New(),
 			crtpPortEmpty2:   list.New(),
 		}
-		cf.responseCallbacks[crtpPortConsole].PushBack(cf.handleConsoleResponse)
 
-		cf.logNameToIndex = make(map[string]logItem)
-		cf.logIndexToName = make(map[uint8]string)
-		cf.logBlocks = make(map[int]logBlock)
+		cf.consoleSystemInit()
+		cf.logSystemInit()
 
 		// start the crazyflie's communications thread
 		go cf.communicationLoop()
+
+		cf.LogSystemReset()
 
 		// return success
 		return cf, nil

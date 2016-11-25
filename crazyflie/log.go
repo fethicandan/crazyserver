@@ -41,7 +41,11 @@ type logBlock struct {
 	variables []logItem
 }
 
-func (cf *Crazyflie) initLogSystem() {
+func (cf *Crazyflie) logSystemInit() {
+	cf.logNameToIndex = make(map[string]logItem)
+	cf.logIndexToName = make(map[uint8]string)
+	cf.logBlocks = make(map[int]logBlock)
+
 	cf.responseCallbacks[crtpPortLog].PushBack(cf.handleLogBlock)
 }
 
@@ -61,7 +65,8 @@ func (cf *Crazyflie) handleLogBlock(resp []byte) {
 		}
 
 		idx := 5 // first index of element
-		log.Printf("Log Block %d", blockid)
+		log.Printf("Log Block %d, size %d: %v", blockid, len(resp), resp)
+		log.Printf("Expect: %v", block.variables)
 		for i := 0; i < len(block.variables) && idx < len(resp); i++ {
 			variable := block.variables[i]
 			datasize := int(logTypeToSize[variable.datatype])
@@ -69,6 +74,7 @@ func (cf *Crazyflie) handleLogBlock(resp []byte) {
 			log.Printf("%s = %v", cf.logIndexToName[variable.id], data)
 			idx += datasize
 		}
+		log.Print("-----\n")
 
 		if idx != len(resp) {
 			log.Printf("warning: block %d has strange size %d (expect %d)", blockid, idx, len(resp))
@@ -77,7 +83,7 @@ func (cf *Crazyflie) handleLogBlock(resp []byte) {
 	}
 }
 
-func (cf *Crazyflie) GetLogTOCInfo() error {
+func (cf *Crazyflie) LogTOCGetInfo() error {
 
 	// the packet to initialize the transaction
 	packet := []byte{crtp(crtpPortLog, 0), 0x01}
@@ -114,8 +120,8 @@ func (cf *Crazyflie) GetLogTOCInfo() error {
 	}
 }
 
-func (cf *Crazyflie) GetLogTOCList() error {
-	cf.GetLogTOCInfo()
+func (cf *Crazyflie) LogTOCGetList() error {
+	cf.LogTOCGetInfo()
 
 	// the packet to initialize the transaction
 	packet := []byte{crtp(crtpPortLog, 0), 0x00, 0x00}
@@ -162,7 +168,36 @@ func (cf *Crazyflie) GetLogTOCList() error {
 	return nil
 }
 
-func (cf *Crazyflie) RequestLogBlock(period time.Duration, variables []string) (int, error) {
+func (cf *Crazyflie) LogSystemReset() error {
+	packet := []byte{crtp(crtpPortLog, 1), 0x05}
+
+	// callback on logblock creation
+	callbackTriggered := make(chan bool)
+	callback := func(resp []byte) {
+		header := crtpHeader(resp[0])
+
+		// should check the header port and channel like this (rather than check the hex value of resp[0]) since the link bits might vary(?)
+		if header.port() == crtpPortLog && header.channel() == 1 && resp[1] == 0x05 {
+			callbackTriggered <- true
+		}
+	}
+
+	// add the callback to the list
+	e := cf.responseCallbacks[crtpPortLog].PushBack(callback)
+	defer cf.responseCallbacks[crtpPortLog].Remove(e) // and remove it once we're done
+
+	// request creation of the log block
+	cf.commandQueue <- packet
+
+	select {
+	case <-callbackTriggered:
+		return nil
+	case <-time.After(time.Duration(500) * time.Millisecond):
+		return ErrorNoResponse
+	}
+}
+
+func (cf *Crazyflie) LogBlockAdd(period time.Duration, variables []string) (int, error) {
 	blockid := 0
 
 	if len(variables) > 30 {
@@ -190,7 +225,7 @@ func (cf *Crazyflie) RequestLogBlock(period time.Duration, variables []string) (
 	for i := 0; i < len(variables); i++ {
 		val, ok := cf.logNameToIndex[variables[i]]
 		if !ok {
-			return 0, ErrorLogItemNotFound
+			return 0, ErrorLogBlockOrItemNotFound
 		}
 		block.variables[i] = val
 	}
@@ -204,6 +239,8 @@ func (cf *Crazyflie) RequestLogBlock(period time.Duration, variables []string) (
 		packet[3+i] = block.variables[i].id
 	}
 
+	log.Printf("Adding logblock %v", packet)
+
 	// callback on logblock creation
 	callbackTriggered := make(chan error)
 	callback := func(resp []byte) {
@@ -216,7 +253,7 @@ func (cf *Crazyflie) RequestLogBlock(period time.Duration, variables []string) (
 			case 0:
 				callbackTriggered <- nil
 			case 2:
-				callbackTriggered <- ErrorLogItemNotFound
+				callbackTriggered <- ErrorLogBlockOrItemNotFound
 			case 7:
 				callbackTriggered <- ErrorLogBlockTooLong
 			case 12:
@@ -245,4 +282,150 @@ func (cf *Crazyflie) RequestLogBlock(period time.Duration, variables []string) (
 
 	cf.logBlocks[blockid] = block
 	return blockid, nil
+}
+
+func (cf *Crazyflie) LogBlockDelete(blockid int) error {
+	packet := []byte{crtp(crtpPortLog, 1), 0x02, uint8(blockid)}
+
+	// callback on logblock creation
+	callbackTriggered := make(chan error)
+	callback := func(resp []byte) {
+		header := crtpHeader(resp[0])
+
+		// should check the header port and channel like this (rather than check the hex value of resp[0]) since the link bits might vary(?)
+		if header.port() == crtpPortLog && header.channel() == 1 && resp[1] == 0x02 {
+			errNum := resp[3]
+			switch errNum {
+			case 0:
+				callbackTriggered <- nil
+			case 2:
+				callbackTriggered <- ErrorLogBlockOrItemNotFound
+			case 7:
+				callbackTriggered <- ErrorLogBlockTooLong
+			case 12:
+				callbackTriggered <- ErrorLogBlockNoMemory
+			default:
+				callbackTriggered <- ErrorUnknown
+			}
+		}
+	}
+
+	// add the callback to the list
+	e := cf.responseCallbacks[crtpPortLog].PushBack(callback)
+	defer cf.responseCallbacks[crtpPortLog].Remove(e) // and remove it once we're done
+
+	// request creation of the log block
+	cf.commandQueue <- packet
+
+	select {
+	case err := <-callbackTriggered:
+		if err != nil {
+			return err
+		}
+	case <-time.After(time.Duration(500) * time.Millisecond):
+		return ErrorNoResponse
+	}
+
+	return nil
+}
+
+func (cf *Crazyflie) LogBlockStart(blockid int) error {
+	block, ok := cf.logBlocks[blockid]
+	if !ok {
+		return ErrorLogBlockOrItemNotFound
+	}
+
+	period := uint8(block.period.Seconds() * 100)
+	if period == 0 {
+		return ErrorLogBlockPeriodTooShort
+	}
+
+	packet := []byte{crtp(crtpPortLog, 1), 0x03, uint8(blockid), period} // period in multiples of 10 ms
+
+	// callback on logblock creation
+	callbackTriggered := make(chan error)
+	callback := func(resp []byte) {
+		header := crtpHeader(resp[0])
+
+		// should check the header port and channel like this (rather than check the hex value of resp[0]) since the link bits might vary(?)
+		if header.port() == crtpPortLog && header.channel() == 1 && resp[1] == 0x03 && resp[2] == uint8(blockid) {
+			errNum := resp[3]
+			switch errNum {
+			case 0:
+				callbackTriggered <- nil
+			case 2:
+				callbackTriggered <- ErrorLogBlockOrItemNotFound
+			case 7:
+				callbackTriggered <- ErrorLogBlockTooLong
+			case 12:
+				callbackTriggered <- ErrorLogBlockNoMemory
+			default:
+				callbackTriggered <- ErrorUnknown
+			}
+		}
+	}
+
+	// add the callback to the list
+	e := cf.responseCallbacks[crtpPortLog].PushBack(callback)
+	defer cf.responseCallbacks[crtpPortLog].Remove(e) // and remove it once we're done
+
+	// request creation of the log block
+	cf.commandQueue <- packet
+
+	select {
+	case err := <-callbackTriggered:
+		if err != nil {
+			return err
+		}
+	case <-time.After(time.Duration(500) * time.Millisecond):
+		return ErrorNoResponse
+	}
+
+	return nil
+}
+
+func (cf *Crazyflie) LogBlockStop(blockid int) error {
+
+	packet := []byte{crtp(crtpPortLog, 1), 0x04, uint8(blockid)}
+
+	// callback on logblock creation
+	callbackTriggered := make(chan error)
+	callback := func(resp []byte) {
+		header := crtpHeader(resp[0])
+
+		// should check the header port and channel like this (rather than check the hex value of resp[0]) since the link bits might vary(?)
+		if header.port() == crtpPortLog && header.channel() == 1 && resp[1] == 0x03 {
+			errNum := resp[3]
+			switch errNum {
+			case 0:
+				callbackTriggered <- nil
+			case 2:
+				callbackTriggered <- ErrorLogBlockOrItemNotFound
+			case 7:
+				callbackTriggered <- ErrorLogBlockTooLong
+			case 12:
+				callbackTriggered <- ErrorLogBlockNoMemory
+			default:
+				callbackTriggered <- ErrorUnknown
+			}
+		}
+	}
+
+	// add the callback to the list
+	e := cf.responseCallbacks[crtpPortLog].PushBack(callback)
+	defer cf.responseCallbacks[crtpPortLog].Remove(e) // and remove it once we're done
+
+	// request creation of the log block
+	cf.commandQueue <- packet
+
+	select {
+	case err := <-callbackTriggered:
+		if err != nil {
+			return err
+		}
+	case <-time.After(time.Duration(500) * time.Millisecond):
+		return ErrorNoResponse
+	}
+
+	return nil
 }

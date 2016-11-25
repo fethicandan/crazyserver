@@ -3,6 +3,10 @@ package crazyserver
 import (
 	"log"
 
+	"fmt"
+
+	"time"
+
 	"github.com/mikehamer/crazyserver/crazyflie"
 	"github.com/mikehamer/crazyserver/crazyradio"
 )
@@ -42,7 +46,7 @@ func AddCrazyflie(address uint64) error {
 	}
 
 	// get the log toc
-	err = cf.GetLogTOCList()
+	err = cf.LogTOCGetList()
 	if err != nil {
 		log.Printf("Error getting crazyflie TOC: %s", err)
 		return err
@@ -52,5 +56,38 @@ func AddCrazyflie(address uint64) error {
 	//...
 
 	crazyflies[address] = cf
+	return nil
+}
+
+func BeginLogging(address uint64, variables []string, period time.Duration) (int, error) {
+	cf, ok := crazyflies[address]
+	if !ok {
+		return -1, fmt.Errorf("No crazyflie with address %X found", address) // TODO: replace with actual error
+	}
+
+	blockid, err := cf.LogBlockAdd(period, variables)
+	if err != nil {
+		return -1, err
+	}
+
+	err = cf.LogBlockStart(blockid)
+	if err != nil {
+		return -1, err
+	}
+
+	return blockid, nil
+}
+
+func StopLogging(address uint64, blockid int) error {
+	cf, ok := crazyflies[address]
+	if !ok {
+		return fmt.Errorf("No crazyflie with address %X found", address) // TODO: replace with actual error
+	}
+
+	err := cf.LogBlockStop(blockid)
+	if err != nil {
+		return err
+	}
+
 	return nil
 }

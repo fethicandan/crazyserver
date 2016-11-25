@@ -5,6 +5,10 @@ import (
 	"strings"
 )
 
+func (cf *Crazyflie) consoleSystemInit() {
+	cf.responseCallbacks[crtpPortConsole].PushBack(cf.handleConsoleResponse)
+}
+
 func (cf *Crazyflie) handleConsoleResponse(resp []byte) {
 	cf.lastUpdate = 0
 
