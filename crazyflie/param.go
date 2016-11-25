@@ -27,6 +27,16 @@ var paramTypeToValue = map[uint8](func([]byte) interface{}){
 	0x6: bytesToFloat32,
 }
 
+var paramTypeToBytes = map[uint8](func(interface{}) []byte){
+	0x8: uint8ToBytes,
+	0x9: uint16ToBytes,
+	0xA: uint32ToBytes,
+	0x0: int8ToBytes,
+	0x1: int16ToBytes,
+	0x2: int32ToBytes,
+	0x6: float32ToBytes,
+}
+
 var paramTypeToSize = map[uint8]uint8{
 	0x8: 1,
 	0x9: 2,
@@ -184,5 +194,45 @@ func (cf *Crazyflie) ParamRead(name string) (interface{}, error) {
 		return value, nil
 	case <-time.After(time.Duration(500) * time.Millisecond):
 		return nil, ErrorNoResponse
+	}
+}
+
+func (cf *Crazyflie) ParamWrite(name string, val interface{}) error {
+	param, ok := cf.paramNameToIndex[name]
+	if !ok {
+		return ErrorParamNotFound
+	}
+
+	// the packet to initialize the transaction
+	datasize := int(paramTypeToSize[param.Datatype])
+	packet := make([]byte, datasize+2)
+	packet[0] = crtp(crtpPortParam, 2)
+	packet[1] = param.ID
+	databytes := paramTypeToBytes[param.Datatype](val)
+	copy(packet[2:], databytes)
+
+	// the function which matches and acts on the response packet
+	callbackTriggered := make(chan []byte)
+	callback := func(resp []byte) {
+		header := crtpHeader(resp[0])
+
+		// should check the header port and channel like this (rather than check the hex value of resp[0]) since the link bits might vary(?)
+		if header.port() == crtpPortParam && header.channel() == 2 && resp[1] == param.ID {
+			callbackTriggered <- resp[2:]
+		}
+	}
+
+	// add the callback to the list
+	e := cf.responseCallbacks[crtpPortParam].PushBack(callback)
+	defer cf.responseCallbacks[crtpPortParam].Remove(e) // and remove it once we're done
+
+	cf.commandQueue <- packet // schedule transmission of the packet
+
+	select {
+	case value := <-callbackTriggered:
+		log.Printf("%v -> %v", databytes, value)
+		return nil
+	case <-time.After(time.Duration(500) * time.Millisecond):
+		return ErrorNoResponse
 	}
 }

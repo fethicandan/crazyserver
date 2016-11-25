@@ -66,3 +66,39 @@ func bytesToFloat16(b []byte) interface{} {
 
 	return math.Float32frombits(fp32)
 }
+
+func uint8ToBytes(val interface{}) []byte {
+	v := val.(uint8)
+	return []byte{v}
+}
+
+func uint16ToBytes(val interface{}) []byte {
+	v := val.(uint16)
+	return []byte{uint8(v & 0xFF), uint8((v >> 8) & 0xFF)}
+}
+
+func uint32ToBytes(val interface{}) []byte {
+	v := val.(uint32)
+	return []byte{uint8(v & 0xFF), uint8((v >> 8) & 0xFF), uint8((v >> 16) & 0xFF), uint8((v >> 24) & 0xFF)}
+}
+
+func int8ToBytes(val interface{}) []byte {
+	v := val.(int8)
+	return []byte{uint8(v)}
+}
+
+func int16ToBytes(val interface{}) []byte {
+	v := val.(int16)
+	return []byte{uint8(v & 0xFF), uint8((v >> 8) & 0xFF)}
+}
+
+func int32ToBytes(val interface{}) []byte {
+	v := val.(int32)
+	return []byte{uint8(v & 0xFF), uint8((v >> 8) & 0xFF), uint8((v >> 16) & 0xFF), uint8((v >> 24) & 0xFF)}
+}
+
+func float32ToBytes(val interface{}) []byte {
+	f := val.(float32)
+	v := math.Float32bits(f)
+	return []byte{uint8(v & 0xFF), uint8((v >> 8) & 0xFF), uint8((v >> 16) & 0xFF), uint8((v >> 24) & 0xFF)}
+}

@@ -28,4 +28,7 @@ func main() {
 
 	val, err := cf.ParamRead("kalman.pNAcc_xy")
 	fmt.Println(val)
+	err = cf.ParamWrite("kalman.pNAcc_xy", float32(3.14159))
+	val, err = cf.ParamRead("kalman.pNAcc_xy")
+	fmt.Println(val)
 }
