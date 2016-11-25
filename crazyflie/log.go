@@ -231,12 +231,13 @@ func (cf *Crazyflie) LogBlockAdd(period time.Duration, variables []string) (int,
 	}
 
 	// request block creation
-	packet := make([]byte, len(variables)+3)
+	packet := make([]byte, 2*len(variables)+3)
 	packet[0] = crtp(crtpPortLog, 1)
 	packet[1] = 0x00           // control create block
 	packet[2] = uint8(blockid) // logblock id
 	for i := 0; i < len(variables); i++ {
-		packet[3+i] = block.variables[i].id
+		packet[3+2*i] = block.variables[i].datatype
+		packet[3+2*i+1] = block.variables[i].id
 	}
 
 	log.Printf("Adding logblock %v", packet)
