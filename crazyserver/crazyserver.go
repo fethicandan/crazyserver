@@ -33,7 +33,7 @@ func Stop() {
 	radio.Close()
 }
 
-func AddCrazyflie(address uint64) error {
+func AddCrazyflie(address uint64) (*crazyflie.Crazyflie, error) {
 	if !isStarted {
 		Start()
 	}
@@ -42,14 +42,14 @@ func AddCrazyflie(address uint64) error {
 	cf, err := crazyflie.Connect(radio, address)
 	if err != nil {
 		log.Printf("Error adding crazyflie: %s", err)
-		return err
+		return nil, err
 	}
 
 	// do other management stuff
 	//...
 
 	crazyflies[address] = cf
-	return nil
+	return cf, nil
 }
 
 func BeginLogging(address uint64, variables []string, period time.Duration) (int, error) {
