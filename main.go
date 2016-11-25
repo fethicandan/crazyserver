@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"log"
 
-	"time"
-
 	"github.com/mikehamer/crazyserver/cache"
 	"github.com/mikehamer/crazyserver/crazyserver"
 )
@@ -28,8 +26,6 @@ func main() {
 	}
 	fmt.Println("Added Crazyflie")
 
-	id, _ := cf.LogBlockAdd(100*time.Millisecond, []string{"stabilizer.pitch", "pm.vbat"})
-	cf.LogBlockStart(id)
-	<-time.After(2 * time.Second)
-	cf.LogBlockStop(id)
+	val, err := cf.ParamRead("kalman.pNAcc_xy")
+	fmt.Println(val)
 }

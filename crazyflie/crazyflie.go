@@ -2,7 +2,6 @@ package crazyflie
 
 import (
 	"container/list"
-	"log"
 	"time"
 
 	"github.com/mikehamer/crazyserver/crazyradio"
@@ -110,13 +109,11 @@ func Connect(radio *crazyradio.RadioDevice, address uint64) (*Crazyflie, error) 
 		go cf.communicationLoop()
 
 		cf.LogSystemReset()
-		log.Print(" --- LOG --- ")
 		err := cf.LogTOCGetList()
 		if err != nil {
 			return nil, err
 		}
 
-		log.Print(" --- PARAM --- ")
 		err = cf.ParamTOCGetList()
 		if err != nil {
 			return nil, err

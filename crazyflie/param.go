@@ -152,3 +152,37 @@ func (cf *Crazyflie) ParamTOCGetList() error {
 
 	return nil
 }
+
+func (cf *Crazyflie) ParamRead(name string) (interface{}, error) {
+	param, ok := cf.paramNameToIndex[name]
+	if !ok {
+		return nil, ErrorParamNotFound
+	}
+
+	// the packet to initialize the transaction
+	packet := []byte{crtp(crtpPortParam, 1), param.ID}
+
+	// the function which matches and acts on the response packet
+	callbackTriggered := make(chan interface{})
+	callback := func(resp []byte) {
+		header := crtpHeader(resp[0])
+
+		// should check the header port and channel like this (rather than check the hex value of resp[0]) since the link bits might vary(?)
+		if header.port() == crtpPortParam && header.channel() == 1 && resp[1] == param.ID {
+			callbackTriggered <- paramTypeToValue[param.Datatype](resp[2:])
+		}
+	}
+
+	// add the callback to the list
+	e := cf.responseCallbacks[crtpPortParam].PushBack(callback)
+	defer cf.responseCallbacks[crtpPortParam].Remove(e) // and remove it once we're done
+
+	cf.commandQueue <- packet // schedule transmission of the packet
+
+	select {
+	case value := <-callbackTriggered:
+		return value, nil
+	case <-time.After(time.Duration(500) * time.Millisecond):
+		return nil, ErrorNoResponse
+	}
+}

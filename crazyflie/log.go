@@ -67,8 +67,6 @@ func (cf *Crazyflie) handleLogBlock(resp []byte) {
 		}
 
 		idx := 5 // first index of element
-		log.Printf("Log Block %d, size %d: %v", blockid, len(resp), resp)
-		log.Printf("Expect: %v", block.Variables)
 		for i := 0; i < len(block.Variables) && idx < len(resp); i++ {
 			variable := block.Variables[i]
 			datasize := int(logTypeToSize[variable.Datatype])
