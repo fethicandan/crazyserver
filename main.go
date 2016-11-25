@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/mikehamer/crazyserver/cache"
 	"github.com/mikehamer/crazyserver/crazyserver"
@@ -31,4 +32,9 @@ func main() {
 	err = cf.ParamWrite("kalman.pNAcc_xy", float32(3.14159))
 	val, err = cf.ParamRead("kalman.pNAcc_xy")
 	fmt.Println(val)
+
+	cf.SetpointSend(0, 0, 0, 4000)
+	<-time.After(2 * time.Second)
+	cf.SetpointSend(0, 0, 0, 0)
+	<-time.After(1 * time.Second)
 }
