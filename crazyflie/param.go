@@ -7,26 +7,32 @@ import (
 	"time"
 )
 
+// PARAM_UINT8  (0x00 | (0x00<<2) | (0x01<<3)) = 0x8
+// PARAM_UINT16 (0x01 | (0x00<<2) | (0x01<<3)) = 0x9
+// PARAM_UINT32 (0x02 | (0x00<<2) | (0x01<<3)) = 0xA
+// PARAM_INT8   (0x00 | (0x00<<2) | (0x00<<3)) = 0x0
+// PARAM_INT16  (0x01 | (0x00<<2) | (0x00<<3)) = 0x1
+// PARAM_INT32  (0x02 | (0x00<<2) | (0x00<<3)) = 0x2
+// PARAM_FLOAT  (0x02 | (0x01<<2) | (0x00<<3)) = 0x6
+
 var paramTypeToValue = map[uint8](func([]byte) interface{}){
-	1: bytesToUint8,
-	2: bytesToUint16,
-	3: bytesToUint32,
-	4: bytesToInt8,
-	5: bytesToInt16,
-	6: bytesToInt32,
-	7: bytesToFloat32,
-	8: bytesToFloat16,
+	0x8: bytesToUint8,
+	0x9: bytesToUint16,
+	0xA: bytesToUint32,
+	0x0: bytesToInt8,
+	0x1: bytesToInt16,
+	0x2: bytesToInt32,
+	0x6: bytesToFloat32,
 }
 
 var paramTypeToSize = map[uint8]uint8{
-	1: 1,
-	2: 2,
-	3: 4,
-	4: 1,
-	5: 2,
-	6: 4,
-	7: 4,
-	8: 2,
+	0x8: 1,
+	0x9: 2,
+	0xA: 4,
+	0x0: 1,
+	0x1: 2,
+	0x2: 4,
+	0x6: 4,
 }
 
 type paramItem struct {
