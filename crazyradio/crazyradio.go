@@ -3,6 +3,8 @@ package crazyradio
 import (
 	"sync"
 
+	"time"
+
 	"github.com/kylelemons/gousb/usb"
 )
 
@@ -59,6 +61,10 @@ func Open() (*RadioDevice, error) {
 		ctx.Close()
 		return nil, err
 	}
+
+	radios[0].ControlTimeout = 250 * time.Millisecond
+	radios[0].ReadTimeout = 250 * time.Millisecond
+	radios[0].WriteTimeout = 250 * time.Millisecond
 
 	// now have a usb device and context pointing to the CrazyRadio!
 	radio := new(RadioDevice)

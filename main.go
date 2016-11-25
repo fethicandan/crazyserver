@@ -7,25 +7,42 @@ import (
 	"time"
 
 	"github.com/mikehamer/crazyserver/cache"
-	"github.com/mikehamer/crazyserver/crazyserver"
+	"github.com/mikehamer/crazyserver/crazyflie"
+	"github.com/mikehamer/crazyserver/crazyradio"
 )
 
 func main() {
+	var err error
 	flag.Parse()
 	cache.Init()
 
-	err := crazyserver.Start()
+	radio, err := crazyradio.Open()
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatal(err)
 	}
-	defer crazyserver.Stop()
-	fmt.Println("Started Server")
+	defer radio.Close()
 
-	cf, err := crazyserver.AddCrazyflie(0xE7E7E7E701)
+	cf, err := crazyflie.Connect(radio, 0xE7E7E7E701)
 	if err != nil {
-		log.Fatalln(err)
+		log.Fatal(err)
 	}
-	fmt.Println("Added Crazyflie")
+	defer cf.Disconnect()
+	log.Println("Rebooting")
+	cf.RebootToFirmware()
+	log.Println("Rebooted")
+
+	<-time.After(1 * time.Second)
+
+	cf.LogSystemReset()
+	err = cf.LogTOCGetList()
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	err = cf.ParamTOCGetList()
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	val, err := cf.ParamRead("kalman.pNAcc_xy")
 	fmt.Println(val)
@@ -33,8 +50,17 @@ func main() {
 	val, err = cf.ParamRead("kalman.pNAcc_xy")
 	fmt.Println(val)
 
-	cf.SetpointSend(0, 0, 0, 4000)
-	<-time.After(2 * time.Second)
+	timeout := time.After(2 * time.Second)
+	for {
+		cf.SetpointSend(0, 0, 0, 4000)
+		select {
+		case <-timeout:
+			break
+		case <-time.After(5 * time.Millisecond):
+			continue
+		}
+	}
+
 	cf.SetpointSend(0, 0, 0, 0)
 	<-time.After(1 * time.Second)
 }

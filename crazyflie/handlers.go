@@ -94,6 +94,12 @@ func (cf *Crazyflie) communicationLoop() {
 				f := e.Value.(func(r []byte))
 				f(resp)
 			}
+
+			for e := cf.responseCallbacks[crtpPortGreedy].Front(); e != nil; e = e.Next() {
+				f := e.Value.(func(r []byte))
+				f(resp)
+			}
+
 		}
 	}
 }

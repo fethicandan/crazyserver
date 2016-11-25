@@ -14,6 +14,7 @@ const (
 	crtpPortLink              = 0x0F
 	crtpPortEmpty1            = 0xF3
 	crtpPortEmpty2            = 0xF7
+	crtpPortGreedy            = 0xFF
 )
 
 func crtp(port crtpPort, channel byte) byte {

@@ -2,14 +2,17 @@ package crazyflie
 
 import (
 	"container/list"
+	"fmt"
+	"sync"
 	"time"
 
 	"github.com/mikehamer/crazyserver/crazyradio"
 )
 
 type Crazyflie struct {
-	radio   *crazyradio.RadioDevice
-	address uint64
+	radio     *crazyradio.RadioDevice
+	address   uint64
+	firstInit sync.Once
 
 	// communication loop
 	disconnect   chan bool
@@ -44,34 +47,28 @@ func Connect(radio *crazyradio.RadioDevice, address uint64) (*Crazyflie, error) 
 	cf.radio = radio
 	cf.address = address
 
-	// ping until response or timeout
+	err := cf.connect()
+	if err != nil {
+		return nil, err
+	}
+
+	return cf, nil
+}
+
+func (cf *Crazyflie) connect() error {
 	var err error
 	var responseReceived bool
 
 	// try to connect 10 times (5 seconds), before giving up
+	fmt.Print("Connecting to Crazyflie.")
 	for i := 0; i < 10; i++ {
+		// timeout := time.After(500 * time.Millisecond)
+
 		cf.radio.Lock()
-
 		err = cf.radio.SetAddress(cf.address)
-		if err != nil {
-			cf.radio.Unlock()
-			return nil, err
-		}
-
-		// ping the crazyflie
-		err = cf.radio.SendPacket([]byte{0xFF})
-		if err != nil {
-			cf.radio.Unlock()
-			return nil, err
-		}
-
-		// and see if it responds
-		responseReceived, _, err = cf.radio.ReadResponse()
+		err = cf.radio.SendPacket([]byte{0xFF})            // ping the crazyflie
+		responseReceived, _, err = cf.radio.ReadResponse() // and see if it responds
 		cf.radio.Unlock()
-
-		if err != nil {
-			return nil, err
-		}
 
 		// if it responds, we've verified connectivity and quit the loop
 		if responseReceived {
@@ -79,50 +76,48 @@ func Connect(radio *crazyradio.RadioDevice, address uint64) (*Crazyflie, error) 
 		}
 
 		// otherwise we wait for 500ms and then try again
-		<-time.After(500 * time.Millisecond)
+		// <-timeout
+		fmt.Print(".")
+
+	}
+	fmt.Println(" Connected")
+
+	if err != nil {
+		return err
 	}
 
 	if responseReceived {
-		// initialize the structures required for communication and packet handling
-		cf.disconnect = make(chan bool)
-		cf.commandQueue = make(chan []byte, 1000)
+		cf.firstInit.Do(func() {
+			// initialize the structures required for communication and packet handling
+			cf.disconnect = make(chan bool)
+			cf.commandQueue = make(chan []byte, 1000)
 
-		// setup the communication callbacks
-		cf.responseCallbacks = map[crtpPort](*list.List){
-			crtpPortConsole:  list.New(),
-			crtpPortParam:    list.New(),
-			crtpPortSetpoint: list.New(),
-			crtpPortMem:      list.New(),
-			crtpPortLog:      list.New(),
-			crtpPortPosition: list.New(),
-			crtpPortPlatform: list.New(),
-			crtpPortLink:     list.New(),
-			crtpPortEmpty1:   list.New(),
-			crtpPortEmpty2:   list.New(),
-		}
+			// setup the communication callbacks
+			cf.responseCallbacks = map[crtpPort](*list.List){
+				crtpPortConsole:  list.New(),
+				crtpPortParam:    list.New(),
+				crtpPortSetpoint: list.New(),
+				crtpPortMem:      list.New(),
+				crtpPortLog:      list.New(),
+				crtpPortPosition: list.New(),
+				crtpPortPlatform: list.New(),
+				crtpPortLink:     list.New(),
+				crtpPortEmpty1:   list.New(),
+				crtpPortEmpty2:   list.New(),
+				crtpPortGreedy:   list.New(),
+			}
 
-		cf.consoleSystemInit()
-		cf.logSystemInit()
-		cf.paramSystemInit()
+			cf.consoleSystemInit()
+			cf.logSystemInit()
+			cf.paramSystemInit()
+		})
 
 		// start the crazyflie's communications thread
 		go cf.communicationLoop()
 
-		cf.LogSystemReset()
-		err := cf.LogTOCGetList()
-		if err != nil {
-			return nil, err
-		}
-
-		err = cf.ParamTOCGetList()
-		if err != nil {
-			return nil, err
-		}
-
-		// return success
-		return cf, nil
+		return nil
 	} else {
-		return nil, ErrorNoResponse
+		return ErrorNoResponse
 	}
 }
 

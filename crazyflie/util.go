@@ -1,22 +1,25 @@
 package crazyflie
 
 import "math"
+import "encoding/binary"
 
 // here we have to use interface as the return everywhere since the functions need to fit into a generic map
 // everything is little endian
 
 func bytesToUint8(b []byte) interface{} {
-	return uint32(b[0])
+	return uint8(b[0])
 }
 
 func bytesToUint16(b []byte) interface{} {
-	_ = b[1]
-	return uint32(uint32(b[0]) | (uint32(b[1]) << 8))
+	return binary.LittleEndian.Uint16(b)
 }
 
 func bytesToUint32(b []byte) interface{} {
-	_ = b[3]
-	return uint32(uint32(b[0]) | (uint32(b[1]) << 8) | (uint32(b[2]) << 16) | (uint32(b[3]) << 24))
+	return binary.LittleEndian.Uint32(b)
+}
+
+func bytesToUint64(b []byte) interface{} {
+	return binary.LittleEndian.Uint64(b)
 }
 
 func bytesToInt8(b []byte) interface{} {
