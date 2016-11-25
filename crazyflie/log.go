@@ -83,13 +83,13 @@ func (cf *Crazyflie) handleLogBlock(resp []byte) {
 	}
 }
 
-func (cf *Crazyflie) LogTOCGetInfo() error {
+func (cf *Crazyflie) LogTOCGetInfo() (int, uint32, error) {
 
 	// the packet to initialize the transaction
 	packet := []byte{crtp(crtpPortLog, 0), 0x01}
 
 	// the function which matches and acts on the response packet
-	callbackTriggered := make(chan int)
+	callbackTriggered := make(chan bool)
 	callback := func(resp []byte) {
 		header := crtpHeader(resp[0])
 
@@ -101,7 +101,7 @@ func (cf *Crazyflie) LogTOCGetInfo() error {
 			cf.logMaxPacket = uint8(resp[7])
 			cf.logMaxOps = uint8(resp[8])
 
-			callbackTriggered <- cf.logCount
+			callbackTriggered <- true
 		}
 	}
 
@@ -112,16 +112,21 @@ func (cf *Crazyflie) LogTOCGetInfo() error {
 	cf.commandQueue <- packet // schedule transmission of the packet
 
 	select {
-	case count := <-callbackTriggered:
-		log.Printf("TOC Size %d with CRC %d, (%d, %d)", count, cf.logCRC, cf.logMaxPacket, cf.logMaxOps)
-		return nil
+	case <-callbackTriggered:
+		return cf.logCount, cf.logCRC, nil
 	case <-time.After(time.Duration(500) * time.Millisecond):
-		return ErrorNoResponse
+		return 0, 0, ErrorNoResponse
 	}
 }
 
 func (cf *Crazyflie) LogTOCGetList() error {
-	cf.LogTOCGetInfo()
+	count, crc, err := cf.LogTOCGetInfo()
+	if err != nil {
+		return err
+	}
+	// TODO: load crc from cache
+	_ = count
+	_ = crc
 
 	// the packet to initialize the transaction
 	packet := []byte{crtp(crtpPortLog, 0), 0x00, 0x00}
@@ -144,7 +149,7 @@ func (cf *Crazyflie) LogTOCGetList() error {
 			cf.logNameToIndex[name] = logItem{id, datatype}
 			cf.logIndexToName[id] = name
 
-			log.Printf("%d -> %s (%d)", id, name, datatype)
+			// log.Printf("%d -> %s (%d)", id, name, datatype)
 
 			callbackTriggered <- true
 		}
@@ -165,6 +170,7 @@ func (cf *Crazyflie) LogTOCGetList() error {
 			// no increment
 		}
 	}
+	log.Printf("Loaded Log TOC Size %d with CRC %X", cf.logCount, cf.logCRC)
 	return nil
 }
 
@@ -239,8 +245,6 @@ func (cf *Crazyflie) LogBlockAdd(period time.Duration, variables []string) (int,
 		packet[3+2*i] = block.variables[i].datatype
 		packet[3+2*i+1] = block.variables[i].id
 	}
-
-	log.Printf("Adding logblock %v", packet)
 
 	// callback on logblock creation
 	callbackTriggered := make(chan error)

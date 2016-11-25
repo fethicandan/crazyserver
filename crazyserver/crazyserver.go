@@ -45,13 +45,6 @@ func AddCrazyflie(address uint64) error {
 		return err
 	}
 
-	// get the log toc
-	err = cf.LogTOCGetList()
-	if err != nil {
-		log.Printf("Error getting crazyflie TOC: %s", err)
-		return err
-	}
-
 	// do other management stuff
 	//...
 

@@ -2,6 +2,7 @@ package crazyflie
 
 import (
 	"container/list"
+	"log"
 	"time"
 
 	"github.com/mikehamer/crazyserver/crazyradio"
@@ -33,8 +34,10 @@ type Crazyflie struct {
 	logBlocks      map[int]logBlock
 
 	// parameters
-	paramCount int
-	paramCache uint
+	paramCount       int
+	paramCRC         uint32
+	paramNameToIndex map[string]paramItem
+	paramIndexToName map[uint8]string
 }
 
 func Connect(radio *crazyradio.RadioDevice, address uint64) (*Crazyflie, error) {
@@ -101,11 +104,23 @@ func Connect(radio *crazyradio.RadioDevice, address uint64) (*Crazyflie, error) 
 
 		cf.consoleSystemInit()
 		cf.logSystemInit()
+		cf.paramSystemInit()
 
 		// start the crazyflie's communications thread
 		go cf.communicationLoop()
 
 		cf.LogSystemReset()
+		log.Print(" --- LOG --- ")
+		err := cf.LogTOCGetList()
+		if err != nil {
+			return nil, err
+		}
+
+		log.Print(" --- PARAM --- ")
+		err = cf.ParamTOCGetList()
+		if err != nil {
+			return nil, err
+		}
 
 		// return success
 		return cf, nil
