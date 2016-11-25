@@ -5,6 +5,8 @@ import (
 	"log"
 	"strings"
 	"time"
+
+	"github.com/mikehamer/crazyserver/cache"
 )
 
 // PARAM_UINT8  (0x00 | (0x00<<2) | (0x01<<3)) = 0x8
@@ -36,9 +38,9 @@ var paramTypeToSize = map[uint8]uint8{
 }
 
 type paramItem struct {
-	id       uint8
-	datatype uint8
-	readonly bool
+	ID       uint8
+	Datatype uint8
+	Readonly bool
 }
 
 func (cf *Crazyflie) paramSystemInit() {
@@ -46,7 +48,7 @@ func (cf *Crazyflie) paramSystemInit() {
 	cf.paramIndexToName = make(map[uint8]string)
 }
 
-func (cf *Crazyflie) ParamTOCGetInfo() (int, uint32, error) {
+func (cf *Crazyflie) paramTOCGetInfo() (int, uint32, error) {
 
 	// the packet to initialize the transaction
 	packet := []byte{crtp(crtpPortParam, 0), 0x01}
@@ -81,13 +83,19 @@ func (cf *Crazyflie) ParamTOCGetInfo() (int, uint32, error) {
 }
 
 func (cf *Crazyflie) ParamTOCGetList() error {
-	count, crc, err := cf.ParamTOCGetInfo()
+	_, crc, err := cf.paramTOCGetInfo()
 	if err != nil {
 		return err
 	}
-	// TODO: load crc from cache
-	_ = count
-	_ = crc
+
+	err = cache.LoadParam(crc, &cf.paramNameToIndex)
+	if err == nil {
+		for k, v := range cf.paramNameToIndex {
+			cf.paramIndexToName[v.ID] = k
+		}
+		log.Printf("Uncached Param TOC Size %d with CRC %X", len(cf.paramNameToIndex), crc)
+		return nil
+	}
 
 	// the packet to initialize the transaction
 	packet := []byte{crtp(crtpPortParam, 0), 0x00, 0x00}
@@ -135,5 +143,12 @@ func (cf *Crazyflie) ParamTOCGetList() error {
 	}
 
 	log.Printf("Loaded Param TOC Size %d with CRC %X", cf.paramCount, cf.paramCRC)
+
+	err = cache.SaveParam(crc, &cf.paramNameToIndex)
+	if err != nil {
+		log.Printf("Error while caching: %s", err)
+	}
+	log.Printf("Param TOC cached.")
+
 	return nil
 }

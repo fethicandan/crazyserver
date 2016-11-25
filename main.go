@@ -5,11 +5,13 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/mikehamer/crazyserver/cache"
 	"github.com/mikehamer/crazyserver/crazyserver"
 )
 
 func main() {
 	flag.Parse()
+	cache.Init()
 
 	err := crazyserver.Start()
 	if err != nil {

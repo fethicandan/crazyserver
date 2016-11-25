@@ -6,6 +6,8 @@ import (
 	"math"
 	"strings"
 	"time"
+
+	"github.com/mikehamer/crazyserver/cache"
 )
 
 var logTypeToValue = map[uint8](func([]byte) interface{}){
@@ -31,14 +33,14 @@ var logTypeToSize = map[uint8]uint8{
 }
 
 type logItem struct {
-	id       uint8
-	datatype uint8
+	ID       uint8
+	Datatype uint8
 }
 
 type logBlock struct {
-	id        int
-	period    time.Duration
-	variables []logItem
+	ID        int
+	Period    time.Duration
+	Variables []logItem
 }
 
 func (cf *Crazyflie) logSystemInit() {
@@ -66,12 +68,12 @@ func (cf *Crazyflie) handleLogBlock(resp []byte) {
 
 		idx := 5 // first index of element
 		log.Printf("Log Block %d, size %d: %v", blockid, len(resp), resp)
-		log.Printf("Expect: %v", block.variables)
-		for i := 0; i < len(block.variables) && idx < len(resp); i++ {
-			variable := block.variables[i]
-			datasize := int(logTypeToSize[variable.datatype])
-			data := logTypeToValue[variable.datatype](resp[idx : idx+datasize])
-			log.Printf("%s = %v", cf.logIndexToName[variable.id], data)
+		log.Printf("Expect: %v", block.Variables)
+		for i := 0; i < len(block.Variables) && idx < len(resp); i++ {
+			variable := block.Variables[i]
+			datasize := int(logTypeToSize[variable.Datatype])
+			data := logTypeToValue[variable.Datatype](resp[idx : idx+datasize])
+			log.Printf("%s = %v", cf.logIndexToName[variable.ID], data)
 			idx += datasize
 		}
 		log.Print("-----\n")
@@ -83,7 +85,7 @@ func (cf *Crazyflie) handleLogBlock(resp []byte) {
 	}
 }
 
-func (cf *Crazyflie) LogTOCGetInfo() (int, uint32, error) {
+func (cf *Crazyflie) logTOCGetInfo() (int, uint32, error) {
 
 	// the packet to initialize the transaction
 	packet := []byte{crtp(crtpPortLog, 0), 0x01}
@@ -120,13 +122,19 @@ func (cf *Crazyflie) LogTOCGetInfo() (int, uint32, error) {
 }
 
 func (cf *Crazyflie) LogTOCGetList() error {
-	count, crc, err := cf.LogTOCGetInfo()
+	_, crc, err := cf.logTOCGetInfo()
 	if err != nil {
 		return err
 	}
-	// TODO: load crc from cache
-	_ = count
-	_ = crc
+
+	err = cache.LoadLog(crc, &cf.logNameToIndex)
+	if err == nil {
+		for k, v := range cf.logNameToIndex {
+			cf.logIndexToName[v.ID] = k
+		}
+		log.Printf("Uncached Log TOC Size %d with CRC %X", len(cf.logNameToIndex), crc)
+		return nil
+	}
 
 	// the packet to initialize the transaction
 	packet := []byte{crtp(crtpPortLog, 0), 0x00, 0x00}
@@ -170,7 +178,15 @@ func (cf *Crazyflie) LogTOCGetList() error {
 			// no increment
 		}
 	}
+
 	log.Printf("Loaded Log TOC Size %d with CRC %X", cf.logCount, cf.logCRC)
+
+	err = cache.SaveLog(crc, &cf.logNameToIndex)
+	if err != nil {
+		log.Printf("Error while caching: %s", err)
+	}
+	log.Printf("Log TOC cached.")
+
 	return nil
 }
 
@@ -233,7 +249,7 @@ func (cf *Crazyflie) LogBlockAdd(period time.Duration, variables []string) (int,
 		if !ok {
 			return 0, ErrorLogBlockOrItemNotFound
 		}
-		block.variables[i] = val
+		block.Variables[i] = val
 	}
 
 	// request block creation
@@ -242,8 +258,8 @@ func (cf *Crazyflie) LogBlockAdd(period time.Duration, variables []string) (int,
 	packet[1] = 0x00           // control create block
 	packet[2] = uint8(blockid) // logblock id
 	for i := 0; i < len(variables); i++ {
-		packet[3+2*i] = block.variables[i].datatype
-		packet[3+2*i+1] = block.variables[i].id
+		packet[3+2*i] = block.Variables[i].Datatype
+		packet[3+2*i+1] = block.Variables[i].ID
 	}
 
 	// callback on logblock creation
@@ -340,7 +356,7 @@ func (cf *Crazyflie) LogBlockStart(blockid int) error {
 		return ErrorLogBlockOrItemNotFound
 	}
 
-	period := uint8(block.period.Seconds() * 100)
+	period := uint8(block.Period.Seconds() * 100)
 	if period == 0 {
 		return ErrorLogBlockPeriodTooShort
 	}
