@@ -27,11 +27,11 @@ func main() {
 		log.Fatal(err)
 	}
 	defer cf.Disconnect()
-	log.Println("Rebooting")
-	cf.RebootToFirmware()
-	log.Println("Rebooted")
+	// log.Println("Rebooting")
+	// cf.RebootToFirmware()
+	// log.Println("Rebooted")
 
-	<-time.After(1 * time.Second)
+	// <-time.After(1 * time.Second)
 
 	cf.LogSystemReset()
 	err = cf.LogTOCGetList()
@@ -50,17 +50,8 @@ func main() {
 	val, err = cf.ParamRead("kalman.pNAcc_xy")
 	fmt.Println(val)
 
-	timeout := time.After(2 * time.Second)
-	for {
-		cf.SetpointSend(0, 0, 0, 4000)
-		select {
-		case <-timeout:
-			break
-		case <-time.After(5 * time.Millisecond):
-			continue
-		}
-	}
-
+	cf.SetpointSend(0, 0, 0, 4000)
+	<-time.After(1 * time.Second)
 	cf.SetpointSend(0, 0, 0, 0)
 	<-time.After(1 * time.Second)
 }
