@@ -1,21 +1,51 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
+	"os"
 	"time"
 
 	"github.com/mikehamer/crazyserver/cache"
 	"github.com/mikehamer/crazyserver/crazyflie"
 	"github.com/mikehamer/crazyserver/crazyradio"
+
+	"github.com/urfave/cli"
 )
 
 func main() {
+	app := cli.NewApp()
+
+	app.Name = "crazyserver"
+	app.Usage = "A cross-platform, install-less, dependency-less server for a fleet of Crazyflies"
+
+	app.Commands = []cli.Command{
+		{
+			Name:  "test",
+			Usage: "Run test codes, for development purposes",
+			Flags: []cli.Flag{
+				cli.UintFlag{
+					Name:  "channel",
+					Value: 80,
+					Usage: "Set the radio channel",
+				},
+				cli.Uint64Flag{
+					Name:  "address",
+					Value: 0xE7E7E7E701,
+					Usage: "Set the radio address",
+				},
+			},
+			Action: testCommand,
+		},
+	}
+
+	app.Run(os.Args)
+}
+
+func testCommand(context *cli.Context) error {
 	var err error
-	channel := flag.Uint("channel", 80, "Radio channel")
-	address := flag.Uint64("address", 0xE7E7E7E701, "Radio address")
-	flag.Parse()
+	channel := context.Uint("channel")
+	address := context.Uint64("address")
 	cache.Init()
 
 	radio, err := crazyradio.Open()
@@ -24,9 +54,9 @@ func main() {
 	}
 	defer radio.Close()
 
-	radio.SetChannel(uint8(*channel))
+	radio.SetChannel(uint8(channel))
 
-	cf, err := crazyflie.Connect(radio, *address)
+	cf, err := crazyflie.Connect(radio, address)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -70,4 +100,6 @@ func main() {
 	<-time.After(40 * time.Millisecond)
 	cf.SetpointSend(0, 0, 0, 0)
 	<-time.After(1 * time.Second)
+
+	return nil
 }
