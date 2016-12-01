@@ -10,7 +10,7 @@ const maxCommunicationPeriod_ms = 1000 // milliseconds
 var defaultPacket = []byte{0xFF}       // a ping
 
 func (cf *Crazyflie) communicationLoop() {
-
+	defer func() { cf.handlerDisconnect <- true }()
 	// begin transmitting quickly
 	cf.lastUpdate = 0
 
@@ -40,6 +40,8 @@ func (cf *Crazyflie) communicationLoop() {
 			return
 		case packet = <-cf.commandQueue: // if a packet is scheduled
 			cf.lastUpdate = 0
+		case <-cf.disconnectOnEmpty: // if we should disconnect
+			return
 		case <-time.After(time.Duration(cf.period-minCommunicationPeriod_ms) * time.Millisecond):
 			packet = defaultPacket // if the timeout occurs send a ping
 			cf.lastUpdate++
@@ -51,6 +53,14 @@ func (cf *Crazyflie) communicationLoop() {
 
 		// we lock the radio so it has the correct address for the whole transaction
 		cf.radio.Lock()
+
+		err = cf.radio.SetChannel(cf.channel)
+		if err != nil {
+			cf.radio.Unlock()
+			log.Printf("%X error: %s", cf.address, err)
+			cf.lastUpdate++
+			continue
+		}
 
 		err = cf.radio.SetAddress(cf.address)
 		if err != nil {

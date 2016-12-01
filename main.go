@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"time"
@@ -44,7 +43,7 @@ func main() {
 
 func testCommand(context *cli.Context) error {
 	var err error
-	channel := context.Uint("channel")
+	channel := uint8(context.Uint("channel"))
 	address := context.Uint64("address")
 	cache.Init()
 
@@ -54,52 +53,26 @@ func testCommand(context *cli.Context) error {
 	}
 	defer radio.Close()
 
-	radio.SetChannel(uint8(channel))
-
-	cf, err := crazyflie.Connect(radio, address)
+	cf, err := crazyflie.Connect(radio, address, channel)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer cf.Disconnect()
-	// log.Println("Rebooting")
-	// cf.RebootToFirmware()
-	// log.Println("Rebooted")
 
-	// <-time.After(1 * time.Second)
+	<-time.After(3 * time.Second)
 
-	cf.LogSystemReset()
-	err = cf.LogTOCGetList()
-	if err != nil {
-		log.Fatal(err)
-	}
+	log.Println("Rebooting to bootloader")
+	addr, err := cf.RebootToBootloader()
+	log.Printf("%X, %v", addr, err)
+	log.Printf("Rebooted to %X", addr)
 
-	err = cf.ParamTOCGetList()
-	if err != nil {
-		log.Fatal(err)
-	}
+	<-time.After(3 * time.Second)
 
-	val, err := cf.ParamRead("kalman.pNAcc_xy")
-	fmt.Println(val)
-	err = cf.ParamWrite("kalman.pNAcc_xy", float32(3.14159))
-	val, err = cf.ParamRead("kalman.pNAcc_xy")
-	fmt.Println(val)
-
-	// Unlock commander
-	cf.SetpointSend(0, 0, 0, 0)
-	// Commander packets needs to be sent at regular interval, otherwise the
-	// commander watchdog will cut the motors
-	stop := false
-	go func() {
-		for !stop {
-			cf.SetpointSend(0, 0, 0, 4000)
-			<-time.After(20 * time.Millisecond)
-		}
-	}()
+	log.Println("Rebooting to firmware")
+	addr, err = cf.RebootToFirmware()
+	log.Printf("%X, %v", addr, err)
 	<-time.After(5 * time.Second)
-	stop = true
-	<-time.After(40 * time.Millisecond)
-	cf.SetpointSend(0, 0, 0, 0)
-	<-time.After(1 * time.Second)
+	log.Printf("Rebooted to %X", addr)
 
 	return nil
 }

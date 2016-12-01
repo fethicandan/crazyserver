@@ -7,7 +7,7 @@ import (
 
 //https://forum.bitcraze.io/viewtopic.php?f=9&t=1488
 
-func (cf *Crazyflie) RebootToFirmware() {
+func (cf *Crazyflie) RebootToFirmware() (uint64, error) {
 	callbackData := make(chan []byte)
 	callback := func(resp []byte) {
 		if resp[0] == 0xFF {
@@ -18,22 +18,22 @@ func (cf *Crazyflie) RebootToFirmware() {
 	e := cf.responseCallbacks[crtpPortGreedy].PushBack(callback)
 	defer cf.responseCallbacks[crtpPortGreedy].Remove(e)
 
-	initPacket := []byte{0xFF, 0xFE, 0xFF}
+	initPacket := []byte{0xFF, 0xFE, 0xFF, 1, 2, 4, 5, 6, 7, 8, 9, 10, 11, 12} //need these extra bytes due to CF1 legacy
 	rebootPacket := []byte{0xFF, 0xFE, 0xF0, 0x01}
 
 	// important that these two packets are serviced directly after each other
 	cf.commandQueue <- initPacket
+
+	<-callbackData
+
 	cf.commandQueue <- rebootPacket
 
-	data := <-callbackData
-	log.Print(data)
-
-	cf.Disconnect()
+	cf.DisconnectOnEmpty()
 	<-time.After(1 * time.Second)
-	cf.connect()
+	return cf.firmwareAddress, cf.connect(cf.firmwareAddress, cf.firmwareChannel)
 }
 
-func (cf *Crazyflie) RebootToBootloader() uint64 {
+func (cf *Crazyflie) RebootToBootloader() (uint64, error) {
 	callbackData := make(chan []byte)
 	callback := func(resp []byte) {
 		if resp[0] == 0xFF {
@@ -47,16 +47,16 @@ func (cf *Crazyflie) RebootToBootloader() uint64 {
 	initPacket := []byte{0xFF, 0xFE, 0xFF}
 	rebootPacket := []byte{0xFF, 0xFE, 0xF0, 0x00}
 
-	// important that these two packets are serviced directly after each other
 	cf.commandQueue <- initPacket
-	cf.commandQueue <- rebootPacket
 
 	data := <-callbackData
 
-	address := uint64(data[4]) | (uint64(data[5]) << 8) | (uint64(data[6]) << 16) | (uint64(data[7]) << 24) | (uint64(data[8]) << 32)
-	log.Printf("New Address: 0x%X", address)
+	cf.commandQueue <- rebootPacket // initialize the reboot
 
-	cf.Disconnect()
+	bootloaderAddress := uint64(data[3]) | (uint64(data[4]) << 8) | (uint64(data[5]) << 16) | (uint64(data[6]) << 24) | (uint64(0xb1) << 32)
+	log.Printf("New Address: 0x%X", bootloaderAddress)
 
-	return address
+	cf.DisconnectOnEmpty()
+	<-time.After(1 * time.Second)
+	return bootloaderAddress, cf.connect(bootloaderAddress, 0)
 }
