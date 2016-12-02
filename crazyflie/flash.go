@@ -5,6 +5,8 @@ import (
 	"log"
 	"time"
 
+	"reflect"
+
 	"gopkg.in/cheggaaa/pb.v1"
 )
 
@@ -26,15 +28,15 @@ const (
 
 var cpuName = map[TargetCPU]string{TargetCPU_NRF51: "NRF51", TargetCPU_STM32: "STM32"}
 
-func (cf *Crazyflie) ReflashSTM32(data []byte) error {
-	return cf.reflash(TargetCPU_STM32, data)
+func (cf *Crazyflie) ReflashSTM32(data []byte, verify bool) error {
+	return cf.reflash(TargetCPU_STM32, data, verify)
 }
 
-func (cf *Crazyflie) ReflashNRF51(data []byte) error {
-	return cf.reflash(TargetCPU_NRF51, data)
+func (cf *Crazyflie) ReflashNRF51(data []byte, verify bool) error {
+	return cf.reflash(TargetCPU_NRF51, data, verify)
 }
 
-func (cf *Crazyflie) reflash(target TargetCPU, data []byte) error {
+func (cf *Crazyflie) reflash(target TargetCPU, data []byte, verify bool) error {
 	err := cf.RebootToBootloader()
 	if err != nil {
 		return err
@@ -45,12 +47,23 @@ func (cf *Crazyflie) reflash(target TargetCPU, data []byte) error {
 		return err
 	}
 
-	flash.numBuffPages = 1
 	log.Printf("Flashing %d bytes to %s (Start: %X, Size: %d, Buff: %d, Flash: %d)", len(data), cpuName[target], flash.startFlashPage, flash.pageSize, flash.numBuffPages, flash.numFlashPages)
 
 	err = cf.flashLoadData(flash, data)
 	if err != nil {
 		return err
+	}
+
+	if verify {
+		progressBar := pb.New(len(data)).Prefix(fmt.Sprintf("Verifying 0x%X", cf.firmwareAddress))
+		progressBar.ShowTimeLeft = true
+		progressBar.SetUnits(pb.U_BYTES)
+		progressBar.Start()
+		for i := 0; i < len(data); i += 16 {
+			cf.flashVerifyAddress(flash, i, data)
+			progressBar.Add(16)
+		}
+		progressBar.FinishPrint("Verified!")
 	}
 
 	err = cf.RebootToFirmware()
@@ -109,8 +122,6 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
 		if resp[0] == 0xFF && resp[1] == flash.target && (resp[2] == 0x18 || resp[2] == 0x19) { // response to write flash
 			errorcode := resp[4]
 			writeFlashError <- errorcode
-		} else if resp[0] == 0xFF && resp[1] == flash.target {
-			log.Println("Strange data: ", resp)
 		}
 	}
 
@@ -191,6 +202,16 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
 }
 
 func (cf *Crazyflie) flashLoadBufferPage(flash *flashObj, bufferPageNum int, data []byte) {
+
+	readBuffData := make(chan []byte)
+	readBuffCallback := func(resp []byte) {
+		if resp[0] == 0xFF && resp[1] == flash.target && resp[2] == 0x15 { // response to read flash
+			readBuffData <- resp
+		}
+	}
+	e := cf.responseCallbacks[crtpPortGreedy].PushBack(readBuffCallback)
+	defer cf.responseCallbacks[crtpPortGreedy].Remove(e)
+
 	loadBufferPacket := make([]byte, 32)
 	loadBufferPacket[0] = 0xFF
 	loadBufferPacket[1] = flash.target
@@ -214,7 +235,7 @@ func (cf *Crazyflie) flashLoadBufferPage(flash *flashObj, bufferPageNum int, dat
 		loadBufferPacket[5] = byte(bufferPageIdx & 0xFF)
 		loadBufferPacket[6] = byte((bufferPageIdx >> 8) & 0xFF)
 
-		dataLen := 25
+		dataLen := len(loadBufferPacket) - 7
 		if dataIdx+dataLen > len(data) {
 			dataLen = len(data) - dataIdx
 		}
@@ -225,9 +246,74 @@ func (cf *Crazyflie) flashLoadBufferPage(flash *flashObj, bufferPageNum int, dat
 
 		copy(loadBufferPacket[7:7+dataLen], data[dataIdx:dataIdx+dataLen])
 
-		cf.commandQueue <- loadBufferPacket[0 : 7+dataLen]
+		readBuffPacket := []byte{0xFF, flash.target, 0x15, byte(bufferPageNum & 0xFF), byte((bufferPageNum >> 8) & 0xFF), byte(bufferPageIdx & 0xFF), byte((bufferPageIdx >> 8) & 0xFF)}
+
+		for bufferVerified := false; !bufferVerified; {
+			cf.commandQueue <- loadBufferPacket[0 : 7+dataLen]
+			cf.commandQueue <- readBuffPacket
+
+			select {
+			case readData := <-readBuffData:
+				equal := reflect.DeepEqual(readData[7:7+dataLen], data[dataIdx:dataIdx+dataLen])
+				if !equal {
+					log.Printf("Buff %d @ 0x%X = \n%v expecting \n%v", bufferPageNum, bufferPageIdx, readData[7:7+dataLen], data[dataIdx:dataIdx+dataLen])
+				} else {
+					bufferVerified = true
+				}
+			case <-time.After(500 * time.Millisecond):
+				log.Print("repeat")
+			}
+		}
 
 		dataIdx += dataLen
 		bufferPageIdx += dataLen
 	}
+}
+
+func (cf *Crazyflie) flashVerifyAddress(flash *flashObj, flashAddress int, data []byte) bool {
+
+	readFlashData := make(chan []byte)
+	readFlashCallback := func(resp []byte) {
+		if resp[0] == 0xFF && resp[1] == flash.target && resp[2] == 0x1C { // response to read flash
+			readFlashData <- resp
+		} else {
+			log.Println("Read strange data: ", resp)
+		}
+	}
+
+	e := cf.responseCallbacks[crtpPortGreedy].PushBack(readFlashCallback)
+	defer cf.responseCallbacks[crtpPortGreedy].Remove(e)
+
+	pageIdx := flashAddress / flash.pageSize
+	pageAddress := flashAddress - pageIdx*flash.pageSize
+
+	readFlashPacket := []byte{0xFF, flash.target, 0x1C, 0, 0, 0, 0}
+	readFlashPacket[3] = byte((pageIdx + flash.startFlashPage) & 0xFF)
+	readFlashPacket[4] = byte(((pageIdx + flash.startFlashPage) >> 8) & 0xFF)
+	readFlashPacket[5] = byte(pageAddress & 0xFF)
+	readFlashPacket[6] = byte((pageAddress >> 8) & 0xFF)
+
+	var readData []byte
+	for readSuccess := false; !readSuccess; {
+		cf.commandQueue <- readFlashPacket
+
+		select {
+		case readData = <-readFlashData:
+			dataLen := len(readData) - 7
+			if flashAddress+dataLen > len(data) {
+				dataLen = len(data) - flashAddress
+			}
+			equal := reflect.DeepEqual(readData[7:7+dataLen], data[flashAddress:flashAddress+dataLen])
+			if !equal {
+				log.Fatalf("Flash @ 0x%X = \n%v expecting \n%v", flashAddress, readData[7:7+dataLen], data[flashAddress:flashAddress+dataLen])
+				return false
+			}
+			return true
+
+		case <-time.After(500 * time.Millisecond):
+			break
+		}
+	}
+
+	return true
 }

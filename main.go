@@ -91,7 +91,10 @@ func flashCommand(context *cli.Context) error {
 		log.Fatal(err)
 	}
 
-	cf.ReflashSTM32(flashData)
+	err = cf.ReflashSTM32(flashData, true)
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	return nil
 }

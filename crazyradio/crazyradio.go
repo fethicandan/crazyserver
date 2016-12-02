@@ -208,7 +208,7 @@ func (radio *RadioDevice) SendPacket(data []byte) error {
 
 func (radio *RadioDevice) ReadResponse() (bool, []byte, error) {
 	// read the acknowledgement
-	resp := make([]byte, 32) // largest packet size
+	resp := make([]byte, 40) // largest packet size
 	length, err := radio.dataIn.Read(resp)
 	if err != nil {
 		return false, nil, err
@@ -222,6 +222,6 @@ func (radio *RadioDevice) ReadResponse() (bool, []byte, error) {
 	// uint8_t reserved : 2
 	// uint8_t retransmission count : 4
 	// uint8_t ackdata[1:32 bytes]
-	responseReceived := (resp[0] & 0x01) != 0
-	return responseReceived, resp[1:length], nil // return just the data portion of the acknowledgement
+	ackReceived := (resp[0] & 0x01) != 0
+	return ackReceived, resp[1:length], nil // return just the data portion of the acknowledgement
 }

@@ -66,7 +66,7 @@ func Connect(radio *crazyradio.RadioDevice, address uint64, channel uint8) (*Cra
 
 func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 	var err error
-	var responseReceived bool
+	var ackReceived bool
 
 	cf.address = address
 	cf.channel = channel
@@ -77,12 +77,12 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 		cf.radio.Lock()
 		err = cf.radio.SetChannel(cf.channel)
 		err = cf.radio.SetAddress(cf.address)
-		err = cf.radio.SendPacket([]byte{0xFF})            // ping the crazyflie
-		responseReceived, _, err = cf.radio.ReadResponse() // and see if it responds
+		err = cf.radio.SendPacket([]byte{0xFF})       // ping the crazyflie
+		ackReceived, _, err = cf.radio.ReadResponse() // and see if it responds
 		cf.radio.Unlock()
 
 		// if it responds, we've verified connectivity and quit the loop
-		if responseReceived {
+		if ackReceived {
 			break
 		}
 
@@ -96,52 +96,51 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 		<-timeout
 	}
 
-	if !responseReceived || err != nil {
-		fmt.Printf("Error connecting (response: %t, error: %v)", responseReceived, err)
+	if !ackReceived || err != nil {
+		fmt.Printf("Error connecting (response: %t, error: %v)", ackReceived, err)
 		if err != nil {
 			return err
-		} else {
-			return ErrorNoResponse
 		}
+		return ErrorNoResponse
 	}
 
 	fmt.Println("Connected")
 
-	if responseReceived {
-		cf.firstInit.Do(func() {
-			// initialize the structures required for communication and packet handling
-			cf.disconnect = make(chan bool)
-			cf.disconnectOnEmpty = make(chan bool)
-			cf.handlerDisconnect = make(chan bool)
-			cf.commandQueue = make(chan []byte, 1000)
-
-			// setup the communication callbacks
-			cf.responseCallbacks = map[crtpPort](*list.List){
-				crtpPortConsole:  list.New(),
-				crtpPortParam:    list.New(),
-				crtpPortSetpoint: list.New(),
-				crtpPortMem:      list.New(),
-				crtpPortLog:      list.New(),
-				crtpPortPosition: list.New(),
-				crtpPortPlatform: list.New(),
-				crtpPortLink:     list.New(),
-				crtpPortEmpty1:   list.New(),
-				crtpPortEmpty2:   list.New(),
-				crtpPortGreedy:   list.New(),
-			}
-
-			cf.consoleSystemInit()
-			cf.logSystemInit()
-			cf.paramSystemInit()
-		})
-
-		// start the crazyflie's communications thread
-		go cf.communicationLoop()
-
-		return nil
-	} else {
+	if !ackReceived {
 		return ErrorNoResponse
 	}
+
+	cf.firstInit.Do(func() {
+		// initialize the structures required for communication and packet handling
+		cf.disconnect = make(chan bool)
+		cf.disconnectOnEmpty = make(chan bool)
+		cf.handlerDisconnect = make(chan bool)
+		cf.commandQueue = make(chan []byte, 1000)
+
+		// setup the communication callbacks
+		cf.responseCallbacks = map[crtpPort](*list.List){
+			crtpPortConsole:  list.New(),
+			crtpPortParam:    list.New(),
+			crtpPortSetpoint: list.New(),
+			crtpPortMem:      list.New(),
+			crtpPortLog:      list.New(),
+			crtpPortPosition: list.New(),
+			crtpPortPlatform: list.New(),
+			crtpPortLink:     list.New(),
+			crtpPortEmpty1:   list.New(),
+			crtpPortEmpty2:   list.New(),
+			crtpPortGreedy:   list.New(),
+		}
+
+		cf.consoleSystemInit()
+		cf.logSystemInit()
+		cf.paramSystemInit()
+	})
+
+	// start the crazyflie's communications thread
+	go cf.communicationLoop()
+
+	return nil
 }
 
 func (cf *Crazyflie) DisconnectImmediately() {

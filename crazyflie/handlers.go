@@ -20,7 +20,7 @@ func (cf *Crazyflie) communicationLoop() {
 		var err error
 		var packet []byte
 
-		if cf.lastUpdate < 10 {
+		if cf.lastUpdate < 2000/minCommunicationPeriod_ms {
 			// if we are communicating, keep communicating quickly
 			cf.period = minCommunicationPeriod_ms
 		} else {
@@ -79,7 +79,7 @@ func (cf *Crazyflie) communicationLoop() {
 		}
 
 		// read the response, which we then distribute to the relevant handler
-		responseReceived, resp, err := cf.radio.ReadResponse()
+		ackReceived, resp, err := cf.radio.ReadResponse()
 		cf.radio.Unlock() // want to unlock the radio ASAP such that other crazyflies can take it
 
 		if err != nil {
@@ -88,9 +88,12 @@ func (cf *Crazyflie) communicationLoop() {
 			continue
 		}
 
-		if !responseReceived || len(resp) < 1 {
+		if !ackReceived {
 			cf.lastUpdate++ // if there is no response, something is wrong... indicate we can transmit at a lower frequency
-		} else {
+			continue
+		}
+
+		if len(resp) > 0 {
 			header := crtpHeader(resp[0])
 
 			if header.port() == 0xF3 || header.port() == 0xF7 {
@@ -109,7 +112,9 @@ func (cf *Crazyflie) communicationLoop() {
 				f := e.Value.(func(r []byte))
 				f(resp)
 			}
-
+		} else {
+			// we sent an acknowledgement only packet (basically only flashing), don't throttle
+			cf.lastUpdate = 0
 		}
 	}
 }
