@@ -87,7 +87,7 @@ func (cf *Crazyflie) paramTOCGetInfo() (int, uint32, error) {
 	select {
 	case <-callbackTriggered:
 		return cf.paramCount, cf.paramCRC, nil
-	case <-time.After(time.Duration(500) * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		return 0, 0, ErrorNoResponse
 	}
 }
@@ -147,7 +147,7 @@ func (cf *Crazyflie) ParamTOCGetList() error {
 		select {
 		case <-callbackTriggered:
 			i++
-		case <-time.After(time.Duration(500) * time.Millisecond):
+		case <-time.After(500 * time.Millisecond):
 			// no increment
 		}
 	}
@@ -192,7 +192,7 @@ func (cf *Crazyflie) ParamRead(name string) (interface{}, error) {
 	select {
 	case value := <-callbackTriggered:
 		return value, nil
-	case <-time.After(time.Duration(500) * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		return nil, ErrorNoResponse
 	}
 }
@@ -232,7 +232,7 @@ func (cf *Crazyflie) ParamWrite(name string, val interface{}) error {
 	case value := <-callbackTriggered:
 		log.Printf("%v -> %v", databytes, value)
 		return nil
-	case <-time.After(time.Duration(500) * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		return ErrorNoResponse
 	}
 }

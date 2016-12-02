@@ -1,13 +1,8 @@
 package crazyflie
 
-import (
-	"log"
-	"time"
-)
-
 //https://forum.bitcraze.io/viewtopic.php?f=9&t=1488
 
-func (cf *Crazyflie) RebootToFirmware() (uint64, error) {
+func (cf *Crazyflie) RebootToFirmware() error {
 	callbackData := make(chan []byte)
 	callback := func(resp []byte) {
 		if resp[0] == 0xFF {
@@ -29,11 +24,10 @@ func (cf *Crazyflie) RebootToFirmware() (uint64, error) {
 	cf.commandQueue <- rebootPacket
 
 	cf.DisconnectOnEmpty()
-	<-time.After(1 * time.Second)
-	return cf.firmwareAddress, cf.connect(cf.firmwareAddress, cf.firmwareChannel)
+	return cf.connect(cf.firmwareAddress, cf.firmwareChannel)
 }
 
-func (cf *Crazyflie) RebootToBootloader() (uint64, error) {
+func (cf *Crazyflie) RebootToBootloader() error {
 	callbackData := make(chan []byte)
 	callback := func(resp []byte) {
 		if resp[0] == 0xFF {
@@ -54,9 +48,7 @@ func (cf *Crazyflie) RebootToBootloader() (uint64, error) {
 	cf.commandQueue <- rebootPacket // initialize the reboot
 
 	bootloaderAddress := uint64(data[3]) | (uint64(data[4]) << 8) | (uint64(data[5]) << 16) | (uint64(data[6]) << 24) | (uint64(0xb1) << 32)
-	log.Printf("New Address: 0x%X", bootloaderAddress)
 
 	cf.DisconnectOnEmpty()
-	<-time.After(1 * time.Second)
-	return bootloaderAddress, cf.connect(bootloaderAddress, 0)
+	return cf.connect(bootloaderAddress, 0)
 }

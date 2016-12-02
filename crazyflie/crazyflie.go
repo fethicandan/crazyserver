@@ -144,7 +144,7 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 	}
 }
 
-func (cf *Crazyflie) Disconnect() {
+func (cf *Crazyflie) DisconnectImmediately() {
 	// asynchronously (& non-blocking) stops the communications thread
 	cf.disconnect <- true
 	<-cf.handlerDisconnect

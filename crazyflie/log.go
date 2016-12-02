@@ -114,7 +114,7 @@ func (cf *Crazyflie) logTOCGetInfo() (int, uint32, error) {
 	select {
 	case <-callbackTriggered:
 		return cf.logCount, cf.logCRC, nil
-	case <-time.After(time.Duration(500) * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		return 0, 0, ErrorNoResponse
 	}
 }
@@ -172,7 +172,7 @@ func (cf *Crazyflie) LogTOCGetList() error {
 		select {
 		case <-callbackTriggered:
 			i++
-		case <-time.After(time.Duration(500) * time.Millisecond):
+		case <-time.After(500 * time.Millisecond):
 			// no increment
 		}
 	}
@@ -212,7 +212,7 @@ func (cf *Crazyflie) LogSystemReset() error {
 	select {
 	case <-callbackTriggered:
 		return nil
-	case <-time.After(time.Duration(500) * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		return ErrorNoResponse
 	}
 }
@@ -295,7 +295,7 @@ func (cf *Crazyflie) LogBlockAdd(period time.Duration, variables []string) (int,
 		if err != nil {
 			return 0, err
 		}
-	case <-time.After(time.Duration(500) * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		return 0, ErrorNoResponse
 	}
 
@@ -341,7 +341,7 @@ func (cf *Crazyflie) LogBlockDelete(blockid int) error {
 		if err != nil {
 			return err
 		}
-	case <-time.After(time.Duration(500) * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		return ErrorNoResponse
 	}
 
@@ -396,7 +396,7 @@ func (cf *Crazyflie) LogBlockStart(blockid int) error {
 		if err != nil {
 			return err
 		}
-	case <-time.After(time.Duration(500) * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		return ErrorNoResponse
 	}
 
@@ -442,7 +442,7 @@ func (cf *Crazyflie) LogBlockStop(blockid int) error {
 		if err != nil {
 			return err
 		}
-	case <-time.After(time.Duration(500) * time.Millisecond):
+	case <-time.After(500 * time.Millisecond):
 		return ErrorNoResponse
 	}
 

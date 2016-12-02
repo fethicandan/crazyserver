@@ -18,6 +18,8 @@ const (
 
 	ErrorParamNotFound
 
+	ErrorFlashDataTooLarge
+
 	ErrorUnknown
 )
 
@@ -29,6 +31,8 @@ var radioErrorString = map[crazyflieError]string{
 	ErrorLogBlockPeriodTooShort: "log block reporting period too short",
 
 	ErrorParamNotFound: "parameter not found",
+
+	ErrorFlashDataTooLarge: "image is too large for flash",
 
 	ErrorUnknown: "an unknown error occurred",
 }

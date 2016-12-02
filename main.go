@@ -1,9 +1,9 @@
 package main
 
 import (
+	"io/ioutil"
 	"log"
 	"os"
-	"time"
 
 	"github.com/mikehamer/crazyserver/cache"
 	"github.com/mikehamer/crazyserver/crazyflie"
@@ -36,12 +36,39 @@ func main() {
 			},
 			Action: testCommand,
 		},
+
+		{
+			Name:  "flash",
+			Usage: "Flashes a Crazyflie",
+			Flags: []cli.Flag{
+				cli.UintFlag{
+					Name:  "channel",
+					Value: 80,
+					Usage: "Set the radio channel",
+				},
+				cli.Uint64Flag{
+					Name:  "address",
+					Value: 0xE7E7E7E701,
+					Usage: "Set the radio address",
+				},
+				cli.StringFlag{
+					Name: "image",
+					Value: "cf2.bin",
+					Usage: "Set the image file to flash",
+				}
+			},
+			Action: flashCommand,
+		},
 	}
 
 	app.Run(os.Args)
 }
 
 func testCommand(context *cli.Context) error {
+	return nil
+}
+
+func flashCommand(context *cli.Context) error {
 	var err error
 	channel := uint8(context.Uint("channel"))
 	address := context.Uint64("address")
@@ -57,22 +84,14 @@ func testCommand(context *cli.Context) error {
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer cf.Disconnect()
+	defer cf.DisconnectImmediately()
 
-	<-time.After(3 * time.Second)
+	flashData, err := ioutil.ReadFile(context.String("image"))
+	if err != nil {
+		log.Fatal(err)
+	}
 
-	log.Println("Rebooting to bootloader")
-	addr, err := cf.RebootToBootloader()
-	log.Printf("%X, %v", addr, err)
-	log.Printf("Rebooted to %X", addr)
-
-	<-time.After(3 * time.Second)
-
-	log.Println("Rebooting to firmware")
-	addr, err = cf.RebootToFirmware()
-	log.Printf("%X, %v", addr, err)
-	<-time.After(5 * time.Second)
-	log.Printf("Rebooted to %X", addr)
+	cf.ReflashSTM32(flashData)
 
 	return nil
 }
