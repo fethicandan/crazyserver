@@ -52,10 +52,10 @@ func main() {
 					Usage: "Set the radio address",
 				},
 				cli.StringFlag{
-					Name: "image",
+					Name:  "image",
 					Value: "cf2.bin",
 					Usage: "Set the image file to flash",
-				}
+				},
 			},
 			Action: flashCommand,
 		},
