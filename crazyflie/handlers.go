@@ -16,9 +16,16 @@ func (cf *Crazyflie) communicationLoop() {
 
 	minPeriod := time.NewTimer(time.Duration(minCommunicationPeriod_ms) * time.Millisecond)
 
+	// Set at true if the latest packet needs to be sent again
+	// (ie. if the packet was not acked)
+	// Todo: implement link quality feedback to be able to detect a disconnected CF
+	retryPacket := false
+
+	// The packet data needs be kept from a loop to the next one to be able to resend it
+	var packet []byte
+
 	for {
 		var err error
-		var packet []byte
 
 		if cf.lastUpdate < 2000/minCommunicationPeriod_ms {
 			// if we are communicating, keep communicating quickly
@@ -34,17 +41,30 @@ func (cf *Crazyflie) communicationLoop() {
 		// wait for one at least one minimum period so we don't spam the CF
 		<-minPeriod.C
 
-		// then wait for the rest of the period, or until a packet is received
-		select {
-		case <-cf.disconnect: // if we should disconnect
-			return
-		case packet = <-cf.commandQueue: // if a packet is scheduled
-			cf.lastUpdate = 0
-		case <-cf.disconnectOnEmpty: // if we should disconnect
-			return
-		case <-time.After(time.Duration(cf.period-minCommunicationPeriod_ms) * time.Millisecond):
-			packet = defaultPacket // if the timeout occurs send a ping
-			cf.lastUpdate++
+		// then wait for the rest of the period, or, if the previous packet is sent well, until a packet is received
+		if retryPacket {
+			select {
+			case <-cf.disconnect: // if we should disconnect
+				return
+			case <-cf.disconnectOnEmpty: // if we should disconnect
+				return
+			case <-time.After(time.Duration(cf.period-minCommunicationPeriod_ms) * time.Millisecond):
+				// Keep current packet value!
+				// FIXME: Do we need to increment lastUpdate there as well?, already done in the 'if !ackReceived' block
+				cf.lastUpdate++
+			}
+		} else {
+			select {
+			case <-cf.disconnect: // if we should disconnect
+				return
+			case packet = <-cf.commandQueue: // if a packet is scheduled
+				cf.lastUpdate = 0
+			case <-cf.disconnectOnEmpty: // if we should disconnect
+				return
+			case <-time.After(time.Duration(cf.period-minCommunicationPeriod_ms) * time.Millisecond):
+				packet = defaultPacket // if the timeout occurs send a ping
+				cf.lastUpdate++
+			}
 		}
 
 		// reset the timer such that the loop runs at the correct maximum frequency irrespective of the processing time below
@@ -82,6 +102,9 @@ func (cf *Crazyflie) communicationLoop() {
 		ackReceived, resp, err := cf.radio.ReadResponse()
 		cf.radio.Unlock() // want to unlock the radio ASAP such that other crazyflies can take it
 
+		// log.Println("-> ", packet)
+		// log.Println("<- ", ackReceived, resp, err)
+
 		if err != nil {
 			log.Printf("%X error: %s", cf.address, err)
 			cf.lastUpdate++
@@ -89,9 +112,11 @@ func (cf *Crazyflie) communicationLoop() {
 		}
 
 		if !ackReceived {
-			cf.lastUpdate++ // if there is no response, something is wrong... indicate we can transmit at a lower frequency
+			retryPacket = true // No ack, there is no guarantee the packet has been received by the CF, needs resend
+			cf.lastUpdate++    // if there is no response, something is wrong... indicate we can transmit at a lower frequency
 			continue
 		}
+		retryPacket = false
 
 		if len(resp) > 0 {
 			header := crtpHeader(resp[0])
