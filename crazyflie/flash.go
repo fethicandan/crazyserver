@@ -183,7 +183,10 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
 		cf.commandQueue <- writeFlashPacket
 
 		for flashConfirmation := false; !flashConfirmation; {
-			timeout := time.After(time.Duration(1000+2*minCommunicationPeriod_ms*flash.numBuffPages*flash.pageSize/25) * time.Millisecond) // twice the time it should take to write all packets
+			// The loop sends the flash command and in case of timeout just request for the flashing status
+			// FIXME: Instead of trying to wait long enough to empty the channel, what
+			// about a "flush" function that returns when the channel is empty?
+			timeout := time.After(1000 * time.Millisecond)
 			select {
 			case errorcode := <-writeFlashError:
 				if errorcode != 0 {
@@ -192,8 +195,11 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
 				}
 				flashConfirmation = true // breaks out of the loop
 			case <-timeout:
-				// flashInfoPacket := []byte{0xFF, flash.target, 0x19} // for some reason doesn't work if we just send this
-				cf.commandQueue <- writeFlashPacket
+				// Since uplink is safe we know the flash request has been executed.
+				// Send a flash info request to find out if the flash process is done
+				flashInfoPacket := []byte{0xFF, flash.target, 0x19}
+				timeout = time.After(20 * time.Millisecond) // The queue of packet should now be empty, the answer will come quick
+				cf.commandQueue <- flashInfoPacket
 			}
 		}
 	}
@@ -246,24 +252,14 @@ func (cf *Crazyflie) flashLoadBufferPage(flash *flashObj, bufferPageNum int, dat
 
 		copy(loadBufferPacket[7:7+dataLen], data[dataIdx:dataIdx+dataLen])
 
-		readBuffPacket := []byte{0xFF, flash.target, 0x15, byte(bufferPageNum & 0xFF), byte((bufferPageNum >> 8) & 0xFF), byte(bufferPageIdx & 0xFF), byte((bufferPageIdx >> 8) & 0xFF)}
-
-		for bufferVerified := false; !bufferVerified; {
-			cf.commandQueue <- loadBufferPacket[0 : 7+dataLen]
-			cf.commandQueue <- readBuffPacket
-
-			select {
-			case readData := <-readBuffData:
-				equal := reflect.DeepEqual(readData[7:7+dataLen], data[dataIdx:dataIdx+dataLen])
-				if !equal {
-					log.Printf("Buff %d @ 0x%X = \n%v expecting \n%v", bufferPageNum, bufferPageIdx, readData[7:7+dataLen], data[dataIdx:dataIdx+dataLen])
-				} else {
-					bufferVerified = true
-				}
-			case <-time.After(500 * time.Millisecond):
-				log.Print("repeat")
-			}
-		}
+		// FIXME: The packet is sent by reference in the channel so we cannot
+		// continue using it after sending it! Either the full buffer creation
+		// has to be brought in the loop or the following 3 lines could be put
+		// in a generic "sendPacket" function to make sure we never modify a
+		// buffer after passing it to the communication handler.
+		txPacket := make([]byte, 32)
+		copy(txPacket, loadBufferPacket[0:7+dataLen])
+		cf.commandQueue <- txPacket
 
 		dataIdx += dataLen
 		bufferPageIdx += dataLen
@@ -271,18 +267,6 @@ func (cf *Crazyflie) flashLoadBufferPage(flash *flashObj, bufferPageNum int, dat
 }
 
 func (cf *Crazyflie) flashVerifyAddress(flash *flashObj, flashAddress int, data []byte) bool {
-
-	readFlashData := make(chan []byte)
-	readFlashCallback := func(resp []byte) {
-		if resp[0] == 0xFF && resp[1] == flash.target && resp[2] == 0x1C { // response to read flash
-			readFlashData <- resp
-		} else {
-			log.Println("Read strange data: ", resp)
-		}
-	}
-
-	e := cf.responseCallbacks[crtpPortGreedy].PushBack(readFlashCallback)
-	defer cf.responseCallbacks[crtpPortGreedy].Remove(e)
 
 	pageIdx := flashAddress / flash.pageSize
 	pageAddress := flashAddress - pageIdx*flash.pageSize
@@ -292,6 +276,21 @@ func (cf *Crazyflie) flashVerifyAddress(flash *flashObj, flashAddress int, data 
 	readFlashPacket[4] = byte(((pageIdx + flash.startFlashPage) >> 8) & 0xFF)
 	readFlashPacket[5] = byte(pageAddress & 0xFF)
 	readFlashPacket[6] = byte((pageAddress >> 8) & 0xFF)
+
+	readFlashData := make(chan []byte)
+	readFlashCallback := func(resp []byte) {
+		if resp[0] == 0xFF && resp[1] == flash.target && resp[2] == 0x1C { // response to read flash
+			if !reflect.DeepEqual(resp[3:7], readFlashPacket[3:7]) {
+				return // Data for the wrong address (previous duplicated request)
+			}
+			readFlashData <- resp
+		} else {
+			log.Println("Read strange data: ", resp)
+		}
+	}
+
+	e := cf.responseCallbacks[crtpPortGreedy].PushBack(readFlashCallback)
+	defer cf.responseCallbacks[crtpPortGreedy].Remove(e)
 
 	var readData []byte
 	for readSuccess := false; !readSuccess; {
@@ -303,6 +302,7 @@ func (cf *Crazyflie) flashVerifyAddress(flash *flashObj, flashAddress int, data 
 			if flashAddress+dataLen > len(data) {
 				dataLen = len(data) - flashAddress
 			}
+
 			equal := reflect.DeepEqual(readData[7:7+dataLen], data[flashAddress:flashAddress+dataLen])
 			if !equal {
 				log.Fatalf("Flash @ 0x%X = \n%v expecting \n%v", flashAddress, readData[7:7+dataLen], data[flashAddress:flashAddress+dataLen])
@@ -310,7 +310,7 @@ func (cf *Crazyflie) flashVerifyAddress(flash *flashObj, flashAddress int, data 
 			}
 			return true
 
-		case <-time.After(500 * time.Millisecond):
+		case <-time.After(20 * time.Millisecond):
 			break
 		}
 	}
