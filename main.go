@@ -38,8 +38,9 @@ func main() {
 		},
 
 		{
-			Name:  "flash",
-			Usage: "Flashes a Crazyflie",
+			Name:      "flash",
+			Usage:     "Flashes a Crazyflie",
+			ArgsUsage: "<image.bin> <target (stm32-fw or nrf51-fw)>",
 			Flags: []cli.Flag{
 				cli.UintFlag{
 					Name:  "channel",
@@ -51,10 +52,9 @@ func main() {
 					Value: 0xE7E7E7E701,
 					Usage: "Set the radio address",
 				},
-				cli.StringFlag{
-					Name:  "image",
-					Value: "cf2.bin",
-					Usage: "Set the image file to flash",
+				cli.BoolFlag{
+					Name:  "verify, v",
+					Usage: "Verify flash content after programming",
 				},
 			},
 			Action: flashCommand,
@@ -74,6 +74,12 @@ func flashCommand(context *cli.Context) error {
 	address := context.Uint64("address")
 	cache.Init()
 
+	if len(context.Args()) != 2 {
+		log.Fatal("You should provide image and target.")
+	}
+	imagePath := context.Args().Get(0)
+	targetString := context.Args().Get(1)
+
 	radio, err := crazyradio.Open()
 	if err != nil {
 		log.Fatal(err)
@@ -86,14 +92,19 @@ func flashCommand(context *cli.Context) error {
 	}
 	defer cf.DisconnectImmediately()
 
-	flashData, err := ioutil.ReadFile(context.String("image"))
+	flashData, err := ioutil.ReadFile(imagePath)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	err = cf.ReflashSTM32(flashData, true)
-	if err != nil {
-		log.Fatal(err)
+	switch targetString {
+	case "stm32-fw":
+		err = cf.ReflashSTM32(flashData, context.Bool("verify"))
+		if err != nil {
+			log.Fatal(err)
+		}
+	default:
+		log.Fatal("Target ", targetString, " Uknown!")
 	}
 
 	return nil
