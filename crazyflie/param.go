@@ -163,6 +163,18 @@ func (cf *Crazyflie) ParamTOCGetList() error {
 	return nil
 }
 
+func (cf *Crazyflie) ParamGetList() []string {
+	list := make([]string, len(cf.paramNameToIndex))
+
+	i := 0
+	for name, _ := range cf.paramNameToIndex {
+		list[i] = name
+		i++
+	}
+
+	return list
+}
+
 func (cf *Crazyflie) ParamRead(name string) (interface{}, error) {
 	param, ok := cf.paramNameToIndex[name]
 	if !ok {

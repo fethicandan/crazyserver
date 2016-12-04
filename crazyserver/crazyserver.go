@@ -41,6 +41,7 @@ func serveCommandHandler(ctx *cli.Context) error {
 	// Initialize routes
 	r.HandleFunc("/fleet", fleetIndexHandler).Methods("GET")
 	addremoveInitRoute(r)
+	paramInitRoute(r)
 
 	// Optional static file server (for making standalone client)
 	if len(staticPath) > 0 {

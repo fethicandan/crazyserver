@@ -114,6 +114,7 @@ func AddCrazyflie(address uint64, channel uint8) (int, error) {
 		return -1, err
 	}
 
+	cf.ParamTOCGetList()
 	// do other management stuff
 	//...
 
