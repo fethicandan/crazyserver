@@ -8,6 +8,7 @@ import (
 	"github.com/mikehamer/crazyserver/cache"
 	"github.com/mikehamer/crazyserver/crazyflie"
 	"github.com/mikehamer/crazyserver/crazyradio"
+	"github.com/mikehamer/crazyserver/crazyserver"
 
 	"github.com/urfave/cli"
 )
@@ -59,6 +60,7 @@ func main() {
 			},
 			Action: flashCommand,
 		},
+		crazyserver.ServeCommand,
 	}
 
 	app.Run(os.Args)
