@@ -2,9 +2,10 @@ package crazyserver
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
-	"time"
+	"sync"
 
 	"net/http"
 
@@ -63,27 +64,80 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+type fleetAddRequest struct {
+	Address *string `json:"address"`
+	Channel *uint8  `json:"channel"`
+}
+
 func fleetIndexHandler(w http.ResponseWriter, r *http.Request) {
-	connected := fleetIndexResponse{
-		[]string{},
+	response := fleetIndexResponse{}
+
+	crazyfliesLock.Lock()
+	response.Connected = make([]string, len(crazyflies))
+
+	i := 0
+	for cfid, _ := range crazyflies {
+		response.Connected[i] = fmt.Sprintf("crazyflie%d", cfid)
 	}
+	crazyfliesLock.Unlock()
 
 	w.Header().Set("Content-Type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
 
-	json.NewEncoder(w).Encode(connected)
+	json.NewEncoder(w).Encode(response)
 }
 
 func fleetAddHandler(w http.ResponseWriter, r *http.Request) {
-	respondError(w, r, http.StatusBadRequest, "Cannot create more Crazyflie connection!")
+	var req fleetAddRequest
+	err := json.NewDecoder(r.Body).Decode(&req)
+	if err != nil || req.Address == nil {
+		respondError(w, r, http.StatusBadRequest, "Bad request!")
+		return
+	}
+
+	channel := *req.Channel
+	address := uint64(0)
+	if req.Address != nil {
+		fmt.Sscanf(*req.Address, "%x", &address)
+		if address == 0 || len(*req.Address) != 10 {
+			respondError(w, r, http.StatusBadRequest, "Bad request! Address invalid")
+			return
+		}
+	} else {
+		address = 0xe7e7e7e7e7
+	}
+
+	crazyfliesLock.Lock()
+	cfid, err := AddCrazyflie(address, channel)
+	crazyfliesLock.Unlock()
+
+	if err != nil {
+		str := fmt.Sprintf("Cannot connect to Crazyflie: %q", err)
+		respondError(w, r, http.StatusNotFound, str)
+		return
+	}
+
+	w.Header().Set("Content-type", "application/json; charset=UTF-8")
+	w.Header().Set("Location", fmt.Sprintf("/fleet/crazyflie%d", cfid))
+	w.WriteHeader(http.StatusOK)
 }
 
 func fleetRemoveHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	id := uint(0)
-	fmt.Sscanf("%d", vars["id"], &id)
+	cfid := int(-1)
+	fmt.Sscanf(vars["id"], "%d", &cfid)
 
-	respondError(w, r, http.StatusNotFound, fmt.Sprintf("Crazyflie with id %d not found!", id))
+	crazyfliesLock.Lock()
+	err := RemoveCrazyflie(cfid)
+	crazyfliesLock.Unlock()
+
+	if err != nil {
+		respondError(w, r, http.StatusNotFound, fmt.Sprint(err))
+		return
+	}
+
+	w.Header().Set("Content-type", "application/json; charset=UTF-8")
+	w.WriteHeader(http.StatusOK)
 }
 
 func respondError(w http.ResponseWriter, r *http.Request, httpStatus int, msg string) {
@@ -98,7 +152,9 @@ func respondError(w http.ResponseWriter, r *http.Request, httpStatus int, msg st
 }
 
 var radio *crazyradio.RadioDevice
-var crazyflies = map[uint64]*crazyflie.Crazyflie{}
+var crazyfliesLock sync.Mutex
+var crazyflies = map[int]*crazyflie.Crazyflie{}
+var crazyfliesMaxIndex = int(0)
 var isStarted = false
 
 func Start() error {
@@ -119,54 +175,37 @@ func Stop() {
 	radio.Close()
 }
 
-func AddCrazyflie(address uint64, channel uint8) (*crazyflie.Crazyflie, error) {
+func AddCrazyflie(address uint64, channel uint8) (int, error) {
 	if !isStarted {
-		Start()
+		err := Start()
+		if err != nil {
+			return -1, err
+		}
 	}
 
 	// connect to the crazyflie
 	cf, err := crazyflie.Connect(radio, address, channel)
 	if err != nil {
 		log.Printf("Error adding crazyflie: %s", err)
-		return nil, err
+		return -1, err
 	}
 
 	// do other management stuff
 	//...
 
-	crazyflies[address] = cf
-	return cf, nil
+	// Add to the list and return the index
+	crazyflies[crazyfliesMaxIndex] = cf
+	crazyfliesMaxIndex += 1
+	return crazyfliesMaxIndex - 1, nil
 }
 
-func BeginLogging(address uint64, variables []string, period time.Duration) (int, error) {
-	cf, ok := crazyflies[address]
-	if !ok {
-		return -1, fmt.Errorf("No crazyflie with address %X found", address) // TODO: replace with actual error
+func RemoveCrazyflie(cfid int) error {
+	if _, ok := crazyflies[cfid]; ok == false {
+		return errors.New(fmt.Sprintf("Crazyflie %d not found!", cfid))
 	}
 
-	blockid, err := cf.LogBlockAdd(period, variables)
-	if err != nil {
-		return -1, err
-	}
-
-	err = cf.LogBlockStart(blockid)
-	if err != nil {
-		return -1, err
-	}
-
-	return blockid, nil
-}
-
-func StopLogging(address uint64, blockid int) error {
-	cf, ok := crazyflies[address]
-	if !ok {
-		return fmt.Errorf("No crazyflie with address %X found", address) // TODO: replace with actual error
-	}
-
-	err := cf.LogBlockStop(blockid)
-	if err != nil {
-		return err
-	}
+	crazyflies[cfid].DisconnectImmediately()
+	delete(crazyflies, cfid)
 
 	return nil
 }
