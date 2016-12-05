@@ -9,6 +9,7 @@ import (
 const minCommunicationPeriod_ms = 5    // milliseconds
 const maxCommunicationPeriod_ms = 1000 // milliseconds
 var defaultPacket = []byte{0xFF}       // a ping
+var packetDequeued = make(chan bool)
 
 func (cf *Crazyflie) communicationSystemInit() {
 	cf.disconnect = make(chan bool)
@@ -50,6 +51,16 @@ func (cf *Crazyflie) PacketSendImmediately(packet []byte) {
 	packetCopy := make([]byte, len(packet))
 	copy(packetCopy, packet)
 	cf.packetPriorityQueue.PushFront(packetCopy)
+}
+
+// Waits for the packet queues to be empty
+func (cf *Crazyflie) WaitForEmptyPacketQueues() {
+	for {
+		if cf.packetPriorityQueue.Len() == 0 && cf.packetQueue.Len() == 0 {
+			return
+		}
+		<-packetDequeued
+	}
 }
 
 func (cf *Crazyflie) PacketClearAll() {
@@ -162,6 +173,13 @@ func (cf *Crazyflie) communicationLoop() {
 
 		if packetList != nil {
 			packetList.Remove(packetElement) // remove the acknowledged packet, since it was successfully transmitted
+
+			select { // if possible (eg. if not already triggered), trigger the packetDequeued channel (used only in function WaitForEmptyPacketQueues)
+			case packetDequeued <- true:
+				break
+			default: // if it has already been triggered, do nothing
+				break
+			}
 		}
 
 		if len(resp) > 0 {

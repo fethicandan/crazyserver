@@ -182,11 +182,10 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
 		// send the packet
 		cf.PacketSend(writeFlashPacket)
 
+		cf.WaitForEmptyPacketQueues()
+
 		for flashConfirmation := false; !flashConfirmation; {
-			// The loop sends the flash command and in case of timeout just request for the flashing status
-			// FIXME: Instead of trying to wait long enough to empty the channel, what
-			// about a "flush" function that returns when the channel is empty?
-			timeout := time.After(1000 * time.Millisecond)
+			timeout := time.After(20 * time.Millisecond)
 			select {
 			case errorcode := <-writeFlashError:
 				if errorcode != 0 {
@@ -195,10 +194,9 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
 				}
 				flashConfirmation = true // breaks out of the loop
 			case <-timeout:
-				// Since uplink is safe we know the flash request has been executed.
+				// Since uplink is safe we know the flash request has been executed
 				// Send a flash info request to find out if the flash process is done
 				flashInfoPacket := []byte{0xFF, flash.target, 0x19}
-				timeout = time.After(20 * time.Millisecond) // The queue of packet should now be empty, the answer will come quick
 				cf.PacketSend(flashInfoPacket)
 			}
 		}
@@ -252,14 +250,7 @@ func (cf *Crazyflie) flashLoadBufferPage(flash *flashObj, bufferPageNum int, dat
 
 		copy(loadBufferPacket[7:7+dataLen], data[dataIdx:dataIdx+dataLen])
 
-		// FIXME: The packet is sent by reference in the channel so we cannot
-		// continue using it after sending it! Either the full buffer creation
-		// has to be brought in the loop or the following 3 lines could be put
-		// in a generic "sendPacket" function to make sure we never modify a
-		// buffer after passing it to the communication handler.
-		txPacket := make([]byte, 32)
-		copy(txPacket, loadBufferPacket[0:7+dataLen])
-		cf.PacketSend(txPacket)
+		cf.PacketSend(loadBufferPacket[0 : 7+dataLen])
 
 		dataIdx += dataLen
 		bufferPageIdx += dataLen

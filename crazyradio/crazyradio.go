@@ -63,8 +63,8 @@ func Open() (*RadioDevice, error) {
 	}
 
 	radios[0].ControlTimeout = 250 * time.Millisecond
-	radios[0].ReadTimeout = 250 * time.Millisecond
-	radios[0].WriteTimeout = 250 * time.Millisecond
+	radios[0].ReadTimeout = 50 * time.Millisecond
+	radios[0].WriteTimeout = 50 * time.Millisecond
 
 	// now have a usb device and context pointing to the CrazyRadio!
 	radio := new(RadioDevice)
