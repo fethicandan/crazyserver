@@ -10,9 +10,9 @@ func (cf *Crazyflie) SetpointSend(roll, pitch, yawrate float32, thrust uint16) {
 	copy(packet[9:13], float32ToBytes(yawrate))
 	copy(packet[13:15], uint16ToBytes(thrust))
 
-	// don't wait for a callback / acknowledgement, just send and be done with it
+	// don't wait for a callback just send and be done with it
 
-	cf.commandQueue <- packet // schedule transmission of the packet
+	cf.PacketSendPriority(packet) // schedule transmission of the packet
 }
 
 func (cf *Crazyflie) ExternalPositionSend(x, y, z float32) {
@@ -24,7 +24,7 @@ func (cf *Crazyflie) ExternalPositionSend(x, y, z float32) {
 	copy(packet[5:9], float32ToBytes(y))
 	copy(packet[9:13], float32ToBytes(z))
 
-	// don't wait for a callback / acknowledgement, just send and be done with it
+	// don't wait for a callback just send and be done with it
 
-	cf.commandQueue <- packet // schedule transmission of the packet
+	cf.PacketSendPriority(packet) // schedule transmission of the packet
 }

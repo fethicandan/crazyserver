@@ -82,7 +82,7 @@ func (cf *Crazyflie) paramTOCGetInfo() (int, uint32, error) {
 	e := cf.responseCallbacks[crtpPortParam].PushBack(callback)
 	defer cf.responseCallbacks[crtpPortParam].Remove(e) // and remove it once we're done
 
-	cf.commandQueue <- packet // schedule transmission of the packet
+	cf.PacketSend(packet) // schedule transmission of the packet
 
 	select {
 	case <-callbackTriggered:
@@ -141,8 +141,8 @@ func (cf *Crazyflie) ParamTOCGetList() error {
 	defer cf.responseCallbacks[crtpPortParam].Remove(e) // and remove it once we're done
 
 	for i := 0; i < cf.paramCount; {
-		packet[2] = uint8(i)      // the parameter we want to read
-		cf.commandQueue <- packet // schedule transmission of the packet
+		packet[2] = uint8(i)  // the parameter we want to read
+		cf.PacketSend(packet) // schedule transmission of the packet
 
 		select {
 		case <-callbackTriggered:
@@ -199,7 +199,7 @@ func (cf *Crazyflie) ParamRead(name string) (interface{}, error) {
 	e := cf.responseCallbacks[crtpPortParam].PushBack(callback)
 	defer cf.responseCallbacks[crtpPortParam].Remove(e) // and remove it once we're done
 
-	cf.commandQueue <- packet // schedule transmission of the packet
+	cf.PacketSend(packet) // schedule transmission of the packet
 
 	select {
 	case value := <-callbackTriggered:
@@ -238,7 +238,7 @@ func (cf *Crazyflie) ParamWrite(name string, val interface{}) error {
 	e := cf.responseCallbacks[crtpPortParam].PushBack(callback)
 	defer cf.responseCallbacks[crtpPortParam].Remove(e) // and remove it once we're done
 
-	cf.commandQueue <- packet // schedule transmission of the packet
+	cf.PacketSend(packet) // schedule transmission of the packet
 
 	select {
 	case value := <-callbackTriggered:

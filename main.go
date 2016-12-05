@@ -67,7 +67,26 @@ func main() {
 }
 
 func testCommand(context *cli.Context) error {
+	var err error
+	channel := uint8(context.Uint("channel"))
+	address := context.Uint64("address")
+	cache.Init()
+
+	radio, err := crazyradio.Open()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer radio.Close()
+
+	cf, err := crazyflie.Connect(radio, address, channel)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer cf.DisconnectImmediately()
+	cf.LogTOCGetList()
+	cf.ParamTOCGetList()
 	return nil
+
 }
 
 func flashCommand(context *cli.Context) error {

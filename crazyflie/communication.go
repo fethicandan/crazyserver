@@ -1,6 +1,7 @@
 package crazyflie
 
 import (
+	"container/list"
 	"log"
 	"time"
 )
@@ -9,6 +10,53 @@ const minCommunicationPeriod_ms = 5    // milliseconds
 const maxCommunicationPeriod_ms = 1000 // milliseconds
 var defaultPacket = []byte{0xFF}       // a ping
 
+func (cf *Crazyflie) communicationSystemInit() {
+	cf.disconnect = make(chan bool)
+	cf.disconnectOnEmpty = make(chan bool)
+	cf.handlerDisconnect = make(chan bool)
+
+	cf.packetQueue = list.New()
+	cf.packetPriorityQueue = list.New()
+
+	// setup the communication callbacks
+	cf.responseCallbacks = map[crtpPort](*list.List){
+		crtpPortConsole:  list.New(),
+		crtpPortParam:    list.New(),
+		crtpPortSetpoint: list.New(),
+		crtpPortMem:      list.New(),
+		crtpPortLog:      list.New(),
+		crtpPortPosition: list.New(),
+		crtpPortPlatform: list.New(),
+		crtpPortLink:     list.New(),
+		crtpPortEmpty1:   list.New(),
+		crtpPortEmpty2:   list.New(),
+		crtpPortGreedy:   list.New(),
+	}
+}
+
+func (cf *Crazyflie) PacketSend(packet []byte) {
+	packetCopy := make([]byte, len(packet))
+	copy(packetCopy, packet)
+	cf.packetQueue.PushBack(packetCopy)
+}
+
+func (cf *Crazyflie) PacketSendPriority(packet []byte) {
+	packetCopy := make([]byte, len(packet))
+	copy(packetCopy, packet)
+	cf.packetPriorityQueue.PushBack(packetCopy)
+}
+
+func (cf *Crazyflie) PacketSendImmediately(packet []byte) {
+	packetCopy := make([]byte, len(packet))
+	copy(packetCopy, packet)
+	cf.packetPriorityQueue.PushFront(packetCopy)
+}
+
+func (cf *Crazyflie) PacketClearAll() {
+	cf.packetQueue.Init()
+	cf.packetPriorityQueue.Init()
+}
+
 func (cf *Crazyflie) communicationLoop() {
 	defer func() { cf.handlerDisconnect <- true }()
 	// begin transmitting quickly
@@ -16,16 +64,11 @@ func (cf *Crazyflie) communicationLoop() {
 
 	minPeriod := time.NewTimer(time.Duration(minCommunicationPeriod_ms) * time.Millisecond)
 
-	// Set at true if the latest packet needs to be sent again
-	// (ie. if the packet was not acked)
-	// Todo: implement link quality feedback to be able to detect a disconnected CF
-	retryPacket := false
-
-	// The packet data needs be kept from a loop to the next one to be able to resend it
-	var packet []byte
-
 	for {
 		var err error
+		var packet []byte
+		var packetElement *list.Element
+		var packetList *list.List
 
 		if cf.lastUpdate < 2000/minCommunicationPeriod_ms {
 			// if we are communicating, keep communicating quickly
@@ -41,29 +84,32 @@ func (cf *Crazyflie) communicationLoop() {
 		// wait for one at least one minimum period so we don't spam the CF
 		<-minPeriod.C
 
-		// then wait for the rest of the period, or, if the previous packet is sent well, until a packet is received
-		if retryPacket {
-			select {
-			case <-cf.disconnect: // if we should disconnect
-				return
+		select { // non blocking receive on the disconnect channel
+		case <-cf.disconnect: // if we should disconnect
+			return
+		default:
+			break //out of this select statement
+		}
+
+		if cf.packetPriorityQueue.Front() != nil {
+			packetList = cf.packetPriorityQueue
+			packetElement = packetList.Front()
+			packet = packetElement.Value.([]byte)
+			cf.lastUpdate = 0
+		} else if cf.packetQueue.Front() != nil {
+			packetList = cf.packetQueue
+			packetElement = packetList.Front()
+			packet = packetElement.Value.([]byte)
+			cf.lastUpdate = 0
+		} else { // no packets, both queues empty
+			select { // non blocking receive on the disconnect channel
 			case <-cf.disconnectOnEmpty: // if we should disconnect
 				return
-			case <-time.After(time.Duration(cf.period-minCommunicationPeriod_ms) * time.Millisecond):
-				// Keep current packet value!
-				// FIXME: Do we need to increment lastUpdate there as well?, already done in the 'if !ackReceived' block
-				cf.lastUpdate++
-			}
-		} else {
-			select {
-			case <-cf.disconnect: // if we should disconnect
-				return
-			case packet = <-cf.commandQueue: // if a packet is scheduled
-				cf.lastUpdate = 0
-			case <-cf.disconnectOnEmpty: // if we should disconnect
-				return
-			case <-time.After(time.Duration(cf.period-minCommunicationPeriod_ms) * time.Millisecond):
-				packet = defaultPacket // if the timeout occurs send a ping
-				cf.lastUpdate++
+			default:
+				packetList = nil
+				packetElement = nil
+				packet = defaultPacket // after a delay, send a ping to keep things alive
+				<-time.After(time.Duration(cf.period-minCommunicationPeriod_ms) * time.Millisecond)
 			}
 		}
 
@@ -107,16 +153,16 @@ func (cf *Crazyflie) communicationLoop() {
 
 		if err != nil {
 			log.Printf("%X error: %s", cf.address, err)
-			cf.lastUpdate++
-			continue
+			continue // if there is an error, something is wrong... should try and retransmit the packet
 		}
 
 		if !ackReceived {
-			retryPacket = true // No ack, there is no guarantee the packet has been received by the CF, needs resend
-			cf.lastUpdate++    // if there is no response, something is wrong... indicate we can transmit at a lower frequency
-			continue
+			continue // if there is no response, something is wrong... should try and retransmit the packet
 		}
-		retryPacket = false
+
+		if packetList != nil {
+			packetList.Remove(packetElement) // remove the acknowledged packet, since it was successfully transmitted
+		}
 
 		if len(resp) > 0 {
 			header := crtpHeader(resp[0])

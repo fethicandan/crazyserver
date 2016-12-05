@@ -18,12 +18,13 @@ type Crazyflie struct {
 	firstInit       sync.Once
 
 	// communication loop
-	disconnect        chan bool
-	disconnectOnEmpty chan bool
-	handlerDisconnect chan bool
-	commandQueue      chan []byte
-	lastUpdate        uint
-	period            uint
+	disconnect          chan bool
+	disconnectOnEmpty   chan bool
+	handlerDisconnect   chan bool
+	packetQueue         *list.List
+	packetPriorityQueue *list.List
+	lastUpdate          uint
+	period              uint
 
 	// callbacks for packet reception
 	responseCallbacks map[crtpPort](*list.List)
@@ -112,26 +113,7 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 
 	cf.firstInit.Do(func() {
 		// initialize the structures required for communication and packet handling
-		cf.disconnect = make(chan bool)
-		cf.disconnectOnEmpty = make(chan bool)
-		cf.handlerDisconnect = make(chan bool)
-		cf.commandQueue = make(chan []byte, 1000)
-
-		// setup the communication callbacks
-		cf.responseCallbacks = map[crtpPort](*list.List){
-			crtpPortConsole:  list.New(),
-			crtpPortParam:    list.New(),
-			crtpPortSetpoint: list.New(),
-			crtpPortMem:      list.New(),
-			crtpPortLog:      list.New(),
-			crtpPortPosition: list.New(),
-			crtpPortPlatform: list.New(),
-			crtpPortLink:     list.New(),
-			crtpPortEmpty1:   list.New(),
-			crtpPortEmpty2:   list.New(),
-			crtpPortGreedy:   list.New(),
-		}
-
+		cf.communicationSystemInit()
 		cf.consoleSystemInit()
 		cf.logSystemInit()
 		cf.paramSystemInit()

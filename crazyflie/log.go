@@ -109,7 +109,7 @@ func (cf *Crazyflie) logTOCGetInfo() (int, uint32, error) {
 	e := cf.responseCallbacks[crtpPortLog].PushBack(callback)
 	defer cf.responseCallbacks[crtpPortLog].Remove(e) // and remove it once we're done
 
-	cf.commandQueue <- packet // schedule transmission of the packet
+	cf.PacketSend(packet) // schedule transmission of the packet
 
 	select {
 	case <-callbackTriggered:
@@ -155,7 +155,7 @@ func (cf *Crazyflie) LogTOCGetList() error {
 			cf.logNameToIndex[name] = logItem{id, datatype}
 			cf.logIndexToName[id] = name
 
-			// log.Printf("%d -> %s (%d)", id, name, datatype)
+			log.Printf("%d -> %s (%d)", id, name, datatype)
 
 			callbackTriggered <- true
 		}
@@ -166,8 +166,8 @@ func (cf *Crazyflie) LogTOCGetList() error {
 	defer cf.responseCallbacks[crtpPortLog].Remove(e) // and remove it once we're done
 
 	for i := 0; i < cf.logCount; {
-		packet[2] = uint8(i)      // the log variable we want to read
-		cf.commandQueue <- packet // schedule transmission of the packet
+		packet[2] = uint8(i)  // the log variable we want to read
+		cf.PacketSend(packet) // schedule transmission of the packet
 
 		select {
 		case <-callbackTriggered:
@@ -207,7 +207,7 @@ func (cf *Crazyflie) LogSystemReset() error {
 	defer cf.responseCallbacks[crtpPortLog].Remove(e) // and remove it once we're done
 
 	// request creation of the log block
-	cf.commandQueue <- packet
+	cf.PacketSend(packet)
 
 	select {
 	case <-callbackTriggered:
@@ -288,7 +288,7 @@ func (cf *Crazyflie) LogBlockAdd(period time.Duration, variables []string) (int,
 	defer cf.responseCallbacks[crtpPortLog].Remove(e) // and remove it once we're done
 
 	// request creation of the log block
-	cf.commandQueue <- packet
+	cf.PacketSend(packet)
 
 	select {
 	case err := <-callbackTriggered:
@@ -334,7 +334,7 @@ func (cf *Crazyflie) LogBlockDelete(blockid int) error {
 	defer cf.responseCallbacks[crtpPortLog].Remove(e) // and remove it once we're done
 
 	// request creation of the log block
-	cf.commandQueue <- packet
+	cf.PacketSend(packet)
 
 	select {
 	case err := <-callbackTriggered:
@@ -389,7 +389,7 @@ func (cf *Crazyflie) LogBlockStart(blockid int) error {
 	defer cf.responseCallbacks[crtpPortLog].Remove(e) // and remove it once we're done
 
 	// request creation of the log block
-	cf.commandQueue <- packet
+	cf.PacketSend(packet)
 
 	select {
 	case err := <-callbackTriggered:
@@ -435,7 +435,7 @@ func (cf *Crazyflie) LogBlockStop(blockid int) error {
 	defer cf.responseCallbacks[crtpPortLog].Remove(e) // and remove it once we're done
 
 	// request creation of the log block
-	cf.commandQueue <- packet
+	cf.PacketSend(packet)
 
 	select {
 	case err := <-callbackTriggered:

@@ -96,7 +96,7 @@ func (cf *Crazyflie) flashGetInfo(target TargetCPU) (*flashObj, error) {
 	e := cf.responseCallbacks[crtpPortGreedy].PushBack(callback)
 	defer cf.responseCallbacks[crtpPortGreedy].Remove(e)
 
-	cf.commandQueue <- packet
+	cf.PacketSend(packet)
 
 	select {
 	case <-callbackTriggered:
@@ -180,7 +180,7 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
 		flashIdx += pageIdx
 
 		// send the packet
-		cf.commandQueue <- writeFlashPacket
+		cf.PacketSend(writeFlashPacket)
 
 		for flashConfirmation := false; !flashConfirmation; {
 			// The loop sends the flash command and in case of timeout just request for the flashing status
@@ -199,7 +199,7 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
 				// Send a flash info request to find out if the flash process is done
 				flashInfoPacket := []byte{0xFF, flash.target, 0x19}
 				timeout = time.After(20 * time.Millisecond) // The queue of packet should now be empty, the answer will come quick
-				cf.commandQueue <- flashInfoPacket
+				cf.PacketSend(flashInfoPacket)
 			}
 		}
 	}
@@ -259,7 +259,7 @@ func (cf *Crazyflie) flashLoadBufferPage(flash *flashObj, bufferPageNum int, dat
 		// buffer after passing it to the communication handler.
 		txPacket := make([]byte, 32)
 		copy(txPacket, loadBufferPacket[0:7+dataLen])
-		cf.commandQueue <- txPacket
+		cf.PacketSend(txPacket)
 
 		dataIdx += dataLen
 		bufferPageIdx += dataLen
@@ -294,7 +294,7 @@ func (cf *Crazyflie) flashVerifyAddress(flash *flashObj, flashAddress int, data 
 
 	var readData []byte
 	for readSuccess := false; !readSuccess; {
-		cf.commandQueue <- readFlashPacket
+		cf.PacketSend(readFlashPacket)
 
 		select {
 		case readData = <-readFlashData:
