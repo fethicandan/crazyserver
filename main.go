@@ -10,6 +10,9 @@ import (
 	"github.com/mikehamer/crazyserver/crazyradio"
 	"github.com/mikehamer/crazyserver/crazyserver"
 
+	"strconv"
+	"strings"
+
 	"github.com/urfave/cli"
 )
 
@@ -48,9 +51,9 @@ func main() {
 					Value: 80,
 					Usage: "Set the radio channel",
 				},
-				cli.Uint64Flag{
+				cli.StringFlag{
 					Name:  "address",
-					Value: 0xE7E7E7E701,
+					Value: "E7E7E7E701",
 					Usage: "Set the radio address",
 				},
 				cli.BoolFlag{
@@ -90,42 +93,80 @@ func testCommand(context *cli.Context) error {
 }
 
 func flashCommand(context *cli.Context) error {
-	var err error
-	channel := uint8(context.Uint("channel"))
-	address := context.Uint64("address")
-	cache.Init()
-
 	if len(context.Args()) != 2 {
 		log.Fatal("You should provide image and target.")
 	}
 	imagePath := context.Args().Get(0)
 	targetString := context.Args().Get(1)
 
+	channel := uint8(context.Uint("channel"))
+	addresses := strings.Split(context.String("address"), ",")
+
+	// a set to hold the unique addresses that we need to flash
+	addressSet := make(map[uint64]bool)
+	// parse the address string, allowing for formatting
+	for _, address := range addresses {
+		addressrange := strings.Split(address, "-") // eg we handle the case E7E7E7E701-07, if there is no -, this should still work.
+
+		lowaddressstring := strings.TrimPrefix(addressrange[0], "0x") // trim any leading hex prefix
+
+		lowaddress, err := strconv.ParseUint(lowaddressstring, 16, 64)
+		if err != nil {
+			log.Printf("Error parsing address %s", lowaddressstring)
+			continue
+		}
+
+		highaddresslowpart := strings.TrimPrefix(addressrange[len(addressrange)-1], "0x")          // eg 07
+		highaddresshighpart := lowaddressstring[0 : len(lowaddressstring)-len(highaddresslowpart)] // eg E7E7E7E7 | 01
+		highaddress, err := strconv.ParseUint(highaddresshighpart+highaddresslowpart, 16, 64)
+		if err != nil {
+			log.Printf("Error parsing address %s", highaddresshighpart+highaddresslowpart)
+			continue
+		}
+
+		for i := lowaddress; i <= highaddress; i++ {
+			addressSet[i] = true
+		}
+	}
+
+	cache.Init()
+
 	radio, err := crazyradio.Open()
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer radio.Close()
-
-	cf, err := crazyflie.Connect(radio, address, channel)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer cf.DisconnectImmediately()
 
 	flashData, err := ioutil.ReadFile(imagePath)
 	if err != nil {
+		radio.Close()
 		log.Fatal(err)
 	}
 
-	switch targetString {
-	case "stm32-fw":
-		err = cf.ReflashSTM32(flashData, context.Bool("verify"))
+	for address, _ := range addressSet {
+		cf, err := crazyflie.Connect(radio, address, channel)
 		if err != nil {
-			log.Fatal(err)
+			log.Print(err)
+			continue
 		}
-	default:
-		log.Fatal("Target ", targetString, " Uknown!")
+
+		switch targetString {
+		case "stm32-fw":
+			err = cf.ReflashSTM32(flashData, context.Bool("verify"))
+			if err != nil {
+				log.Print(err)
+			}
+		case "nrf51-fw":
+			err = cf.ReflashNRF51(flashData, context.Bool("verify"))
+			if err != nil {
+				log.Print(err)
+			}
+		default:
+			cf.DisconnectImmediately()
+			radio.Close()
+			log.Fatal("Target ", targetString, " Unknown!")
+		}
+
+		cf.DisconnectImmediately()
 	}
 
 	return nil
