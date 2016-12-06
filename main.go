@@ -1,9 +1,13 @@
 package main
 
 import (
+	"fmt"
 	"io/ioutil"
 	"log"
 	"os"
+	"sync"
+
+	pb "gopkg.in/cheggaaa/pb.v1"
 
 	"github.com/mikehamer/crazyserver/cache"
 	"github.com/mikehamer/crazyserver/crazyflie"
@@ -48,13 +52,13 @@ func main() {
 			Flags: []cli.Flag{
 				cli.UintFlag{
 					Name:  "channel",
-					Value: 80,
-					Usage: "Set the radio channel",
+					Value: 0,
+					Usage: "Set the radio channel (default is bootloader channel: 0)",
 				},
 				cli.StringFlag{
 					Name:  "address",
-					Value: "E7E7E7E701",
-					Usage: "Set the radio address",
+					Value: "0",
+					Usage: "Set the radio address (default is bootloader address: 0)",
 				},
 				cli.BoolFlag{
 					Name:  "verify, v",
@@ -129,45 +133,100 @@ func flashCommand(context *cli.Context) error {
 		}
 	}
 
-	cache.Init()
+	// now convert the set into a slice for easier processing
+	addressSlice := make([]uint64, len(addressSet))
+	addressIdx := 0
+	for k := range addressSet {
+		addressSlice[addressIdx] = k
+		addressIdx++
+	}
 
+	// Initalize the radio and cache
 	radio, err := crazyradio.Open()
 	if err != nil {
 		log.Fatal(err)
 	}
+	cache.Init()
 
+	// Read the flash data
 	flashData, err := ioutil.ReadFile(imagePath)
 	if err != nil {
 		radio.Close()
 		log.Fatal(err)
 	}
 
-	for address, _ := range addressSet {
+	// Prepare to connect to multiple crazyflies for parallel flashing
+	progressBars := make([]*pb.ProgressBar, 0, len(addressSlice))
+	crazyflies := make([]*crazyflie.Crazyflie, 0, len(addressSlice))
+
+	for _, address := range addressSlice {
+
+		// connect to each crazyflie
 		cf, err := crazyflie.Connect(radio, address, channel)
 		if err != nil {
-			log.Print(err)
+			log.Printf("Error connecting to 0x%X: %s", address, err)
 			continue
 		}
+		crazyflies = append(crazyflies, cf)
 
-		switch targetString {
-		case "stm32-fw":
-			err = cf.ReflashSTM32(flashData, context.Bool("verify"))
-			if err != nil {
-				log.Print(err)
-			}
-		case "nrf51-fw":
-			err = cf.ReflashNRF51(flashData, context.Bool("verify"))
-			if err != nil {
-				log.Print(err)
-			}
-		default:
-			cf.DisconnectImmediately()
-			radio.Close()
-			log.Fatal("Target ", targetString, " Unknown!")
-		}
+		// for each successful connection, initiate a progress bar
+		progressBar := pb.New(len(flashData)).Prefix(fmt.Sprintf("Flashing 0x%X", address))
+		progressBar.ShowTimeLeft = true
+		progressBar.SetUnits(pb.U_BYTES)
+		progressBars = append(progressBars, progressBar)
 
-		cf.DisconnectImmediately()
 	}
+
+	// start all progress bars
+	pool, err := pb.StartPool(progressBars...)
+
+	// start the goroutines to flash
+	wg := new(sync.WaitGroup)
+	for idx := range crazyflies {
+		wg.Add(1)
+
+		progressChannel := make(chan int, 5)
+
+		go func(i int) {
+			for {
+				progress, more := <-progressChannel
+				if more {
+					progressBars[i].Add(progress)
+				} else {
+					return
+				}
+			}
+		}(idx)
+
+		go func(i int) {
+			switch targetString {
+			case "stm32-fw":
+				err = crazyflies[i].ReflashSTM32(flashData, context.Bool("verify"), progressChannel)
+				if err != nil {
+					progressBars[i].FinishPrint(fmt.Sprint(err))
+				} else {
+					progressBars[i].Finish()
+				}
+			case "nrf51-fw":
+				err = crazyflies[i].ReflashNRF51(flashData, context.Bool("verify"), progressChannel)
+				if err != nil {
+					progressBars[i].FinishPrint(fmt.Sprint(err))
+				} else {
+					progressBars[i].Finish()
+				}
+			default:
+				progressBars[i].FinishPrint(fmt.Sprint("Target ", targetString, " Unknown!"))
+			}
+
+			crazyflies[i].DisconnectImmediately()
+			close(progressChannel)
+			wg.Done()
+		}(idx)
+	}
+	wg.Wait()
+	pool.Stop()
+
+	radio.Close()
 
 	return nil
 }

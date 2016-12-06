@@ -88,9 +88,9 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 		}
 
 		if i == 0 {
-			fmt.Print("Connecting to Crazyflie. ")
+			fmt.Printf("Connecting to 0x%X.\n", cf.address)
 		} else {
-			fmt.Print(". ")
+			fmt.Printf("Retry 0x%X\n", cf.address)
 		}
 
 		// otherwise we wait for 500ms and then try again
@@ -98,14 +98,14 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 	}
 
 	if !ackReceived || err != nil {
-		fmt.Printf("Error connecting (response: %t, error: %v)", ackReceived, err)
+		fmt.Printf("Error connecting to 0x%X (response: %t, error: %v)", address, ackReceived, err)
 		if err != nil {
 			return err
 		}
 		return ErrorNoResponse
 	}
 
-	fmt.Println("Connected")
+	fmt.Printf("Connected to 0x%X\n", cf.address)
 
 	if !ackReceived {
 		return ErrorNoResponse

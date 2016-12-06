@@ -1,13 +1,10 @@
 package crazyflie
 
 import (
-	"fmt"
 	"log"
 	"time"
 
 	"reflect"
-
-	"gopkg.in/cheggaaa/pb.v1"
 )
 
 type flashObj struct {
@@ -28,15 +25,15 @@ const (
 
 var cpuName = map[TargetCPU]string{TargetCPU_NRF51: "NRF51", TargetCPU_STM32: "STM32"}
 
-func (cf *Crazyflie) ReflashSTM32(data []byte, verify bool) error {
-	return cf.reflash(TargetCPU_STM32, data, verify)
+func (cf *Crazyflie) ReflashSTM32(data []byte, verify bool, progressChannel chan int) error {
+	return cf.reflash(TargetCPU_STM32, data, verify, progressChannel)
 }
 
-func (cf *Crazyflie) ReflashNRF51(data []byte, verify bool) error {
-	return cf.reflash(TargetCPU_NRF51, data, verify)
+func (cf *Crazyflie) ReflashNRF51(data []byte, verify bool, progressChannel chan int) error {
+	return cf.reflash(TargetCPU_NRF51, data, verify, progressChannel)
 }
 
-func (cf *Crazyflie) reflash(target TargetCPU, data []byte, verify bool) error {
+func (cf *Crazyflie) reflash(target TargetCPU, data []byte, verify bool, progressChannel chan int) error {
 	err := cf.RebootToBootloader()
 	if err != nil {
 		return err
@@ -47,23 +44,15 @@ func (cf *Crazyflie) reflash(target TargetCPU, data []byte, verify bool) error {
 		return err
 	}
 
-	log.Printf("Flashing %d bytes to %s (Start: %X, Size: %d, Buff: %d, Flash: %d)", len(data), cpuName[target], flash.startFlashPage, flash.pageSize, flash.numBuffPages, flash.numFlashPages)
-
-	err = cf.flashLoadData(flash, data)
+	err = cf.flashLoadData(flash, data, progressChannel)
 	if err != nil {
 		return err
 	}
 
 	if verify {
-		progressBar := pb.New(len(data)).Prefix(fmt.Sprintf("Verifying 0x%X", cf.firmwareAddress))
-		progressBar.ShowTimeLeft = true
-		progressBar.SetUnits(pb.U_BYTES)
-		progressBar.Start()
 		for i := 0; i < len(data); i += 16 {
 			cf.flashVerifyAddress(flash, i, data)
-			progressBar.Add(16)
 		}
-		progressBar.FinishPrint("Verified!")
 	}
 
 	err = cf.RebootToFirmware()
@@ -106,16 +95,11 @@ func (cf *Crazyflie) flashGetInfo(target TargetCPU) (*flashObj, error) {
 	}
 }
 
-func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
+func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte, progressChannel chan int) error {
 
 	if len(data) > int(flash.numFlashPages-flash.startFlashPage)*int(flash.pageSize) {
 		return ErrorFlashDataTooLarge
 	}
-
-	progressBar := pb.New(len(data)).Prefix(fmt.Sprintf("Flashing 0x%X", cf.firmwareAddress))
-	progressBar.ShowTimeLeft = true
-	progressBar.SetUnits(pb.U_BYTES)
-	progressBar.Start()
 
 	writeFlashError := make(chan byte)
 	writeFlashCallback := func(resp []byte) {
@@ -158,7 +142,7 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
 
 			// write the buffer page, consists of multiple packets
 			cf.flashLoadBufferPage(flash, pageIdx, data[dataIdx:dataIdx+dataLen])
-			progressBar.Add(dataLen)
+			progressChannel <- dataLen
 
 			dataIdx += dataLen
 			pageIdx++
@@ -189,7 +173,7 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
 			select {
 			case errorcode := <-writeFlashError:
 				if errorcode != 0 {
-					progressBar.FinishPrint(fmt.Sprintf("Write flash error %d", errorcode))
+					// progressBar.FinishPrint(fmt.Sprintf("Write flash error %d", errorcode))
 					return nil
 				}
 				flashConfirmation = true // breaks out of the loop
@@ -201,7 +185,6 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte) error {
 			}
 		}
 	}
-	progressBar.FinishPrint(fmt.Sprintf("Finishing flashing %d bytes (%d pages)", len(data), flashIdx-flash.startFlashPage))
 	return nil
 }
 

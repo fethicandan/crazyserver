@@ -18,12 +18,12 @@ func (cf *Crazyflie) RebootToFirmware() error {
 
 	// important that these two packets are serviced directly after each other
 	cf.PacketSend(initPacket)
+	cf.PacketSend(rebootPacket)
 
 	<-callbackData
 
-	cf.PacketSend(rebootPacket)
-
 	cf.DisconnectOnEmpty()
+
 	return cf.connect(cf.firmwareAddress, cf.firmwareChannel)
 }
 
@@ -42,13 +42,13 @@ func (cf *Crazyflie) RebootToBootloader() error {
 	rebootPacket := []byte{0xFF, 0xFE, 0xF0, 0x00}
 
 	cf.PacketSend(initPacket)
+	cf.PacketSend(rebootPacket) // initialize the reboot
 
 	data := <-callbackData
-
-	cf.PacketSend(rebootPacket) // initialize the reboot
 
 	bootloaderAddress := uint64(data[3]) | (uint64(data[4]) << 8) | (uint64(data[5]) << 16) | (uint64(data[6]) << 24) | (uint64(0xb1) << 32)
 
 	cf.DisconnectOnEmpty()
+
 	return cf.connect(bootloaderAddress, 0)
 }
