@@ -35,6 +35,7 @@ func (cf *Crazyflie) ReflashNRF51(data []byte, verify bool, progressChannel chan
 
 func (cf *Crazyflie) reflash(target TargetCPU, data []byte, verify bool, progressChannel chan int) error {
 	err := cf.RebootToBootloader()
+
 	if err != nil {
 		return err
 	}
@@ -142,6 +143,11 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte, progressChannel
 
 			// write the buffer page, consists of multiple packets
 			cf.flashLoadBufferPage(flash, pageIdx, data[dataIdx:dataIdx+dataLen])
+
+			if cf.Status() == StatusNoResponse {
+				return ErrorNoResponse
+			}
+
 			progressChannel <- dataLen
 
 			dataIdx += dataLen
@@ -182,6 +188,10 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte, progressChannel
 				// Send a flash info request to find out if the flash process is done
 				flashInfoPacket := []byte{0xFF, flash.target, 0x19}
 				cf.PacketSend(flashInfoPacket)
+
+				if cf.Status() == StatusNoResponse {
+					return ErrorNoResponse
+				}
 			}
 		}
 	}

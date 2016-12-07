@@ -70,8 +70,10 @@ func (cf *Crazyflie) PacketClearAll() {
 
 func (cf *Crazyflie) communicationLoop() {
 	defer func() { cf.handlerDisconnect <- true }()
+
 	// begin transmitting quickly
 	cf.lastUpdate = 0
+	errorCount := 0
 
 	minPeriod := time.NewTimer(time.Duration(minCommunicationPeriod_ms) * time.Millisecond)
 
@@ -81,16 +83,25 @@ func (cf *Crazyflie) communicationLoop() {
 		var packetElement *list.Element
 		var packetList *list.List
 
-		if cf.lastUpdate < 2000/minCommunicationPeriod_ms {
-			// if we are communicating, keep communicating quickly
-			cf.period = minCommunicationPeriod_ms
-		} else {
-			// otherwise begin exponential slowing
-			cf.period *= 2
-			if cf.period > maxCommunicationPeriod_ms {
-				cf.period = maxCommunicationPeriod_ms
-			}
+		if errorCount == 0 {
+			cf.status = StatusConnected
+		} else if errorCount > 100 {
+			cf.status = StatusNoResponse
 		}
+
+		errorCount++ // we increment this here, since it is set to 0 after every successful loop
+
+		cf.period = minCommunicationPeriod_ms
+		// if cf.lastUpdate < 2000/minCommunicationPeriod_ms {
+		// 	// if we are communicating, keep communicating quickly
+		// 	cf.period = minCommunicationPeriod_ms
+		// } else {
+		// 	// otherwise begin exponential slowing
+		// 	cf.period *= 2
+		// 	if cf.period > maxCommunicationPeriod_ms {
+		// 		cf.period = maxCommunicationPeriod_ms
+		// 	}
+		// }
 
 		// wait for one at least one minimum period so we don't spam the CF
 		<-minPeriod.C
@@ -120,7 +131,7 @@ func (cf *Crazyflie) communicationLoop() {
 				packetList = nil
 				packetElement = nil
 				packet = defaultPacket // after a delay, send a ping to keep things alive
-				<-time.After(time.Duration(cf.period-minCommunicationPeriod_ms) * time.Millisecond)
+				// <-time.After(time.Duration(cf.period-minCommunicationPeriod_ms) * time.Millisecond)
 			}
 		}
 
@@ -205,5 +216,7 @@ func (cf *Crazyflie) communicationLoop() {
 			// we sent an acknowledgement only packet (basically only flashing), don't throttle
 			cf.lastUpdate = 0
 		}
+
+		errorCount = 0
 	}
 }

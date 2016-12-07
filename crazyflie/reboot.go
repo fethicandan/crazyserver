@@ -1,5 +1,9 @@
 package crazyflie
 
+import (
+	"time"
+)
+
 //https://forum.bitcraze.io/viewtopic.php?f=9&t=1488
 
 func (cf *Crazyflie) RebootToFirmware() error {
@@ -23,6 +27,8 @@ func (cf *Crazyflie) RebootToFirmware() error {
 	<-callbackData
 
 	cf.DisconnectOnEmpty()
+
+	<-time.After(500 * time.Millisecond)
 
 	return cf.connect(cf.firmwareAddress, cf.firmwareChannel)
 }
@@ -49,6 +55,8 @@ func (cf *Crazyflie) RebootToBootloader() error {
 	bootloaderAddress := uint64(data[3]) | (uint64(data[4]) << 8) | (uint64(data[5]) << 16) | (uint64(data[6]) << 24) | (uint64(0xb1) << 32)
 
 	cf.DisconnectOnEmpty()
+
+	<-time.After(500 * time.Millisecond)
 
 	return cf.connect(bootloaderAddress, 0)
 }

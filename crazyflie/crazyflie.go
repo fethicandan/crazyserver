@@ -9,12 +9,21 @@ import (
 	"github.com/mikehamer/crazyserver/crazyradio"
 )
 
+type CrazyflieStatus uint8
+
+const (
+	StatusDisconnected CrazyflieStatus = iota
+	StatusConnected
+	StatusNoResponse
+)
+
 type Crazyflie struct {
 	radio           *crazyradio.RadioDevice
 	address         uint64
 	firmwareAddress uint64
 	channel         uint8
 	firmwareChannel uint8
+	status          CrazyflieStatus
 	firstInit       sync.Once
 
 	// communication loop
@@ -71,9 +80,10 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 
 	cf.address = address
 	cf.channel = channel
+	cf.status = StatusDisconnected
 
-	for i := 0; i < 10; i++ {
-		timeout := time.After(500 * time.Millisecond)
+	for i := 0; i < 200; i++ {
+		timeout := time.After(50 * time.Millisecond)
 
 		cf.radio.Lock()
 		err = cf.radio.SetChannel(cf.channel)
@@ -89,16 +99,16 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 
 		if i == 0 {
 			fmt.Printf("Connecting to 0x%X.\n", cf.address)
-		} else {
-			fmt.Printf("Retry 0x%X\n", cf.address)
 		}
 
-		// otherwise we wait for 500ms and then try again
+		// otherwise we wait for 50ms and then try again
 		<-timeout
 	}
 
 	if !ackReceived || err != nil {
 		fmt.Printf("Error connecting to 0x%X (response: %t, error: %v)", address, ackReceived, err)
+		cf.status = StatusNoResponse
+
 		if err != nil {
 			return err
 		}
@@ -106,10 +116,6 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 	}
 
 	fmt.Printf("Connected to 0x%X\n", cf.address)
-
-	if !ackReceived {
-		return ErrorNoResponse
-	}
 
 	cf.firstInit.Do(func() {
 		// initialize the structures required for communication and packet handling
@@ -122,17 +128,32 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 	// start the crazyflie's communications thread
 	go cf.communicationLoop()
 
+	cf.status = StatusConnected
 	return nil
+}
+
+func (cf *Crazyflie) Address() uint64 {
+	return cf.address
+}
+
+func (cf *Crazyflie) FirmwareAddress() uint64 {
+	return cf.firmwareAddress
+}
+
+func (cf *Crazyflie) Status() CrazyflieStatus {
+	return cf.status
 }
 
 func (cf *Crazyflie) DisconnectImmediately() {
 	// asynchronously (& non-blocking) stops the communications thread
 	cf.disconnect <- true
 	<-cf.handlerDisconnect
+	cf.status = StatusDisconnected
 }
 
 func (cf *Crazyflie) DisconnectOnEmpty() {
 	// asynchronously (& non-blocking) stops the communications thread
 	cf.disconnectOnEmpty <- true
 	<-cf.handlerDisconnect
+	cf.status = StatusDisconnected
 }
