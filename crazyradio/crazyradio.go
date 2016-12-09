@@ -2,7 +2,6 @@ package crazyradio
 
 import (
 	"container/list"
-	"fmt"
 	"sync"
 	"time"
 )
@@ -15,12 +14,14 @@ type packetQueue struct {
 }
 
 var radios []*RadioDevice
+var radioWorkQueue chan uint8
 
 var packetQueues map[uint8]map[uint64]*packetQueue
 var callbacks map[uint64]func([]byte)
 
 var radioThreadShouldStop chan bool
-var waitGroup *sync.WaitGroup
+var globalWaitGroup *sync.WaitGroup
+var workWaitGroup *sync.WaitGroup
 
 var defaultPacket = []byte{0xFF}
 
@@ -34,48 +35,35 @@ func callbackRemove(address uint64) {
 
 func CrazyflieRegister(channel uint8, address uint64, responseCallback func([]byte)) error {
 
-	var ackReceived = false
-	var err error = nil
-
-	// first, test the crazyflie
-	for i := 0; i < 200; i++ {
-		timeout := time.After(50 * time.Millisecond)
-
-		radios[0].Lock()
-		radios[0].SetChannel(channel)
-		radios[0].SetAddress(address)
-		radios[0].SendPacket([]byte{0xFF})             // ping the crazyflie
-		ackReceived, _, err = radios[0].ReadResponse() // and see if it responds
-		radios[0].Unlock()
-
-		// if it responds, we've verified connectivity and quit the loop
-		if ackReceived {
-			break
+	// setup a temporary callback for the crazyflie such that this thread is notified when
+	cfCommunicating := make(chan bool)
+	callbackRegister(address, func(resp []byte) {
+		select {
+		case cfCommunicating <- true:
+		default:
 		}
+	})
 
-		// otherwise we wait for 50ms and then try again
-		<-timeout
-	}
+	// initialize the packet queues for the crazyflie
+	// this will cause it to be pinged in the next round (and our callback will be called)
+	packetQueueGet(channel, address)
 
-	if !ackReceived || err != nil {
-		fmt.Printf("Error connecting to %d/0x%X: %v", channel, address, err)
+	// wait for the crazyflie to respond, or to time out
 
-		if err != nil {
-			return err
-		}
+	select {
+	case <-time.After(5 * time.Second):
+		packetQueueRemove(channel, address)
+		callbackRemove(address)
 		return ErrorNoResponse
+	case <-cfCommunicating:
+		callbackRegister(address, responseCallback)
+		return nil
 	}
-
-	packetQueueGet(channel, address) // this also initializes the packet queues
-	callbackRegister(address, responseCallback)
-	fmt.Printf("Connected to %d/0x%X", channel, address)
-	return nil
 }
 
 func CrazyflieRemove(channel uint8, address uint64) {
 	callbackRemove(address)
 	packetQueueRemove(channel, address)
-
 }
 
 func packetQueueGet(channel uint8, address uint64) *packetQueue {
@@ -137,31 +125,118 @@ func Start() error {
 	packetQueues = make(map[uint8]map[uint64]*packetQueue)
 
 	radioThreadShouldStop = make(chan bool)
-	waitGroup = &sync.WaitGroup{}
+	globalWaitGroup = &sync.WaitGroup{}
+	workWaitGroup = &sync.WaitGroup{}
 
-	radio, err := Open()
+	radios, err := OpenAllRadios()
 	if err != nil {
 		return err
 	}
 
-	radios = append(radios, radio)
+	// the queue on which radios receive their work
+	radioWorkQueue = make(chan uint8, 256)
 
-	waitGroup.Add(1)
-	go radioThread()
+	// start a thread per radio
+	for _, r := range radios {
+		globalWaitGroup.Add(1)
+		go radioThread(r)
+	}
+
+	// start the thread to coordinate the radios
+	globalWaitGroup.Add(1)
+	go coordinatorThread()
 
 	return nil
 }
 
 func Stop() {
 	close(radioThreadShouldStop)
-	waitGroup.Wait()
+	globalWaitGroup.Wait()
+
+	for _, r := range radios {
+		r.Close()
+	}
 }
 
-func radioThread() {
-	defer waitGroup.Done()
+func radioThread(radio *RadioDevice) {
+	defer globalWaitGroup.Done()
 
-	var err error
-	radio := radios[0]
+	for {
+		var channel uint8
+
+		select {
+		case <-radioThreadShouldStop:
+			return // here no need to workWaitGroup.Done() since we haven't received work
+		case channel = <-radioWorkQueue:
+		}
+
+	addressLoop:
+		for address, queue := range packetQueues[channel] {
+			// quit if we should quit
+			select {
+			case <-radioThreadShouldStop:
+				break addressLoop // prematurely finish the work
+			default:
+			}
+
+			queue.lock.Lock()
+
+			var packetQueue *list.List = nil
+			var packetElement *list.Element = nil
+			var packet []byte
+
+			if queue.priorityQueue.Front() != nil {
+				packetQueue = queue.priorityQueue
+				packetElement = packetQueue.Front()
+				packet = packetElement.Value.([]byte)
+			} else if queue.standardQueue.Front() != nil {
+				packetQueue = queue.standardQueue
+				packetElement = packetQueue.Front()
+				packet = packetElement.Value.([]byte)
+			} else {
+				packet = defaultPacket
+			}
+
+			queue.lock.Unlock()
+
+			radio.SetChannel(channel)
+			radio.SetAddress(address)
+			err := radio.SendPacket(packet)
+			if err != nil {
+				continue
+			}
+
+			// read the response, which we then distribute to the relevant handler
+			ackReceived, resp, err := radio.ReadResponse()
+
+			if err != nil || !ackReceived {
+				continue // if there is an error, something is wrong... should try and retransmit the packet
+			}
+
+			if packetQueue != nil {
+				queue.lock.Lock()
+				packetQueue.Remove(packetElement) // remove the acknowledged packet, since it was successfully transmitted
+				queue.lock.Unlock()
+			}
+
+			select { // if possible (eg. if not already triggered), trigger the packetDequeued channel (used only in function WaitForEmptyPacketQueue)
+			case queue.packetDequeued <- true:
+				break
+			default: // if it has already been triggered, do nothing
+			}
+
+			// now call the crazyflie's callback (resp will have len 0 if the packet was acked with no data)
+			if callback, ok := callbacks[address]; ok {
+				go callback(resp)
+			}
+		}
+
+		workWaitGroup.Done() // signal to the coordinatorThread that we're done with the work
+	}
+}
+
+func coordinatorThread() {
+	defer globalWaitGroup.Done()
 
 	for {
 		// quit if we should quit
@@ -169,7 +244,6 @@ func radioThread() {
 		case <-radioThreadShouldStop:
 			return
 		default:
-			break
 		}
 
 		if len(packetQueues) == 0 {
@@ -177,79 +251,10 @@ func radioThread() {
 			continue
 		}
 
-		for channel, channelQueues := range packetQueues { // loop through all channels
-			// quit if we should quit
-			select {
-			case <-radioThreadShouldStop:
-				return
-			default:
-				break
-			}
-
-			for address, queue := range channelQueues {
-				// quit if we should quit
-				select {
-				case <-radioThreadShouldStop:
-					return
-				default:
-					break
-				}
-
-				queue.lock.Lock()
-
-				var packetQueue *list.List = nil
-				var packetElement *list.Element = nil
-				var packet []byte
-
-				if queue.priorityQueue.Front() != nil {
-					packetQueue = queue.priorityQueue
-					packetElement = packetQueue.Front()
-					packet = packetElement.Value.([]byte)
-				} else if queue.standardQueue.Front() != nil {
-					packetQueue = queue.standardQueue
-					packetElement = packetQueue.Front()
-					packet = packetElement.Value.([]byte)
-				} else {
-					packet = defaultPacket
-				}
-
-				queue.lock.Unlock()
-
-				radio.lock.Lock()
-
-				radio.SetChannel(channel)
-				radio.SetAddress(address)
-				err = radio.SendPacket(packet)
-				if err != nil {
-					continue
-				}
-
-				// read the response, which we then distribute to the relevant handler
-				ackReceived, resp, err := radio.ReadResponse()
-				radio.lock.Unlock()
-
-				if err != nil || !ackReceived {
-					continue // if there is an error, something is wrong... should try and retransmit the packet
-				}
-
-				if packetQueue != nil {
-					queue.lock.Lock()
-					packetQueue.Remove(packetElement) // remove the acknowledged packet, since it was successfully transmitted
-					queue.lock.Unlock()
-				}
-
-				select { // if possible (eg. if not already triggered), trigger the packetDequeued channel (used only in function WaitForEmptyPacketQueue)
-				case queue.packetDequeued <- true:
-					break
-				default: // if it has already been triggered, do nothing
-					break
-				}
-
-				// now call the crazyflie's callback (resp will have len 0 if the packet was acked with no data)
-				if callback, ok := callbacks[address]; ok {
-					go callback(resp)
-				}
-			}
+		for channel := range packetQueues { // loop through all channels
+			workWaitGroup.Add(1)
+			radioWorkQueue <- channel
 		}
+		workWaitGroup.Wait() // wait for all work to be processed, ensures that only one radio operates per channel
 	}
 }

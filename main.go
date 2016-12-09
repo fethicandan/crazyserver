@@ -86,11 +86,10 @@ func testCommand(context *cli.Context) error {
 	// connect to each crazyflie
 	cf, err := crazyflie.Connect(0xE7E7E7E701, 80)
 	if err != nil {
-		log.Print("Error connecting: ", err)
+		log.Fatal("Error connecting: ", err)
 	}
 
-	cache.Clear()
-	cache.Init()
+	// cache.Clear()
 
 	cf.LogTOCGetList()
 
@@ -174,7 +173,7 @@ func flashCommand(context *cli.Context) error {
 		crazyflies = append(crazyflies, cf)
 
 		// for each successful connection, initiate a progress bar
-		progressBar := pb.New(len(flashData)).Prefix(fmt.Sprintf("0x%X", address))
+		progressBar := pb.New(len(flashData)).Prefix(fmt.Sprintf("Flashing 0x%X", address))
 		progressBar.ShowTimeLeft = true
 		progressBar.SetUnits(pb.U_BYTES)
 		progressBars = append(progressBars, progressBar)
@@ -214,23 +213,15 @@ func flashCommand(context *cli.Context) error {
 				err = cf.ReflashSTM32(flashData, context.Bool("verify"), pc)
 				if err != nil {
 					log.Printf("0x%X: %s", cf.FirmwareAddress(), err)
-					// pb.FinishPrint(fmt.Sprint(err))
-				} else {
-					// pb.Finish()
 				}
 			case "nrf51-fw":
 				err = cf.ReflashNRF51(flashData, context.Bool("verify"), pc)
 				if err != nil {
 					log.Printf("0x%X: %s", cf.FirmwareAddress(), err)
-					// pb.FinishPrint(fmt.Sprint(err))
-				} else {
-					// pb.Finish()
 				}
 			default:
-				// pb.FinishPrint(fmt.Sprint("Target ", targetString, " Unknown!"))
 			}
 
-			log.Printf("Returning from 0x%X", cf.FirmwareAddress())
 			pb.Finish()
 			cf.DisconnectImmediately()
 			close(pc)

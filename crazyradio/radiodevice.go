@@ -9,7 +9,6 @@ import (
 )
 
 type RadioDevice struct {
-	context *usb.Context
 	device  *usb.Device
 	lock    *sync.Mutex
 	dataOut usb.Endpoint
@@ -17,60 +16,33 @@ type RadioDevice struct {
 	address uint64
 }
 
-func Open() (*RadioDevice, error) {
-	ctx := usb.NewContext()
-	ctx.Debug(0)
+var usbContext *usb.Context
 
-	radios, err := ctx.ListDevices(
-		func(desc *usb.Descriptor) bool {
-			if desc.Vendor == 0x1915 && desc.Product == 0x7777 {
-				return true
-			}
-			return false
-		})
-
-	if err != nil {
-		ctx.Close()
-		return nil, err
-	}
-
-	if len(radios) == 0 {
-		ctx.Close()
-		return nil, ErrorDeviceNotFound
-	}
-
-	// close all radios apart from the first one (in the case that multiple are connected)
-	for _, d := range radios[1:] {
-		d.Close()
-	}
-
+func OpenRadio(dev *usb.Device) (*RadioDevice, error) {
 	// open the endpoint for transfers out
-	dOut, err := radios[0].OpenEndpoint(1, 0, 0, 0x01)
+	dOut, err := dev.OpenEndpoint(1, 0, 0, 0x01)
 
 	if err != nil {
-		radios[0].Close()
-		ctx.Close()
+		dev.Close()
 		return nil, err
 	}
 
 	// open the endpoint for transfers in
-	dIn, err := radios[0].OpenEndpoint(1, 0, 0, 0x81)
+	dIn, err := dev.OpenEndpoint(1, 0, 0, 0x81)
 
 	if err != nil {
-		radios[0].Close()
-		ctx.Close()
+		dev.Close()
 		return nil, err
 	}
 
-	radios[0].ControlTimeout = 250 * time.Millisecond
-	radios[0].ReadTimeout = 50 * time.Millisecond
-	radios[0].WriteTimeout = 50 * time.Millisecond
+	dev.ControlTimeout = 250 * time.Millisecond
+	dev.ReadTimeout = 50 * time.Millisecond
+	dev.WriteTimeout = 50 * time.Millisecond
 
 	// now have a usb device and context pointing to the CrazyRadio!
 	radio := new(RadioDevice)
 	radio.lock = new(sync.Mutex)
-	radio.device = radios[0]
-	radio.context = ctx
+	radio.device = dev
 	radio.dataOut = dOut
 	radio.dataIn = dIn
 
@@ -84,11 +56,47 @@ func Open() (*RadioDevice, error) {
 	return radio, nil
 }
 
+func OpenAllRadios() ([]*RadioDevice, error) {
+	usbContext := usb.NewContext()
+	usbContext.Debug(0)
+
+	radioDevices, err := usbContext.ListDevices(
+		func(desc *usb.Descriptor) bool {
+			if desc.Vendor == 0x1915 && desc.Product == 0x7777 {
+				return true
+			}
+			return false
+		})
+
+	if err != nil {
+		usbContext.Close()
+		return nil, err
+	}
+
+	if len(radioDevices) == 0 {
+		usbContext.Close()
+		return nil, ErrorDeviceNotFound
+	}
+
+	radios := make([]*RadioDevice, 0, len(radioDevices))
+
+	for _, radioDevice := range radioDevices {
+		radio, err := OpenRadio(radioDevice)
+		if err == nil {
+			radios = append(radios, radio)
+		}
+	}
+
+	if len(radios) == 0 {
+		usbContext.Close()
+		return nil, ErrorDeviceNotFound
+	}
+
+	return radios, nil
+}
+
 func (radio *RadioDevice) Close() {
-	radio.Lock()
 	radio.device.Close()
-	radio.context.Close()
-	radio.Unlock()
 }
 
 func (radio *RadioDevice) Lock() {
