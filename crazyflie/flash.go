@@ -172,7 +172,7 @@ func (cf *Crazyflie) flashLoadData(flash *flashObj, data []byte, progressChannel
 		// send the packet
 		cf.PacketSend(writeFlashPacket)
 
-		cf.WaitForEmptyPacketQueues()
+		cf.PacketQueueWaitForEmpty()
 
 		for flashConfirmation := false; !flashConfirmation; {
 			timeout := time.After(20 * time.Millisecond)

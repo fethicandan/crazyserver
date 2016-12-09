@@ -8,7 +8,6 @@ import (
 	"net/http"
 
 	"github.com/mikehamer/crazyserver/crazyflie"
-	"github.com/mikehamer/crazyserver/crazyradio"
 
 	"github.com/gorilla/mux"
 	"github.com/urfave/cli"
@@ -97,7 +96,6 @@ func respondError(w http.ResponseWriter, r *http.Request, httpStatus int, msg st
 
 // This is the main state of the server. Currently the server is using one Crazyradio to connect a list of Crazyflies.
 // The lock should be aquired by anyone accessing the list.
-var radio *crazyradio.RadioDevice
 var crazyfliesLock sync.Mutex
 var crazyflies = map[int]*crazyflie.Crazyflie{}
 var crazyfliesMaxIndex = int(0)

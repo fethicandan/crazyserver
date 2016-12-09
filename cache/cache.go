@@ -6,12 +6,13 @@ import (
 
 	"encoding/gob"
 
+	"io/ioutil"
+	"strings"
+
 	"github.com/mitchellh/go-homedir"
 )
 
 var cache string
-var paramdir string
-var logdir string
 
 func Init() error {
 	home, err := homedir.Dir()
@@ -25,6 +26,16 @@ func Init() error {
 		return err
 	}
 	return nil
+}
+
+func Clear() {
+	Init()
+	files, _ := ioutil.ReadDir(cache)
+	for _, f := range files {
+		if strings.HasSuffix(f.Name(), ".paramcache") || strings.HasSuffix(f.Name(), ".logcache") {
+			os.Remove(cache + "/" + f.Name())
+		}
+	}
 }
 
 func LoadParam(crc uint32, e interface{}) error {

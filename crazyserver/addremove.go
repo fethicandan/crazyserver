@@ -9,7 +9,6 @@ import (
 
 	"github.com/gorilla/mux"
 	"github.com/mikehamer/crazyserver/crazyflie"
-	"github.com/mikehamer/crazyserver/crazyradio"
 )
 
 func addremoveInitRoute(r *mux.Router) {
@@ -79,13 +78,7 @@ func fleetRemoveHandler(w http.ResponseWriter, r *http.Request) {
 
 // Start opens the Crazyradio
 func Start() error {
-	var err error
-	radio, err = crazyradio.Open()
-	if err != nil {
-		return err
-	}
-
-	isStarted = true
+	//crazyradio already opened by main, do nothing
 	return nil
 }
 
@@ -94,7 +87,6 @@ func Stop() {
 	for _, v := range crazyflies {
 		v.DisconnectImmediately()
 	}
-	radio.Close()
 }
 
 // AddCrazyflie connects to a Crazyfle at address and channel and add it to the crazyflie list.
@@ -108,7 +100,7 @@ func AddCrazyflie(address uint64, channel uint8) (int, error) {
 	}
 
 	// connect to the crazyflie
-	cf, err := crazyflie.Connect(radio, address, channel)
+	cf, err := crazyflie.Connect(address, channel)
 	if err != nil {
 		log.Printf("Error adding crazyflie: %s", err)
 		return -1, err

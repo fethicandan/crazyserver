@@ -2,7 +2,6 @@ package crazyflie
 
 import (
 	"container/list"
-	"fmt"
 	"sync"
 	"time"
 
@@ -18,7 +17,6 @@ const (
 )
 
 type Crazyflie struct {
-	radio           *crazyradio.RadioDevice
 	address         uint64
 	firmwareAddress uint64
 	channel         uint8
@@ -27,13 +25,9 @@ type Crazyflie struct {
 	firstInit       sync.Once
 
 	// communication loop
-	disconnect          chan bool
-	disconnectOnEmpty   chan bool
-	handlerDisconnect   chan bool
-	packetQueue         *list.List
-	packetPriorityQueue *list.List
-	lastUpdate          uint
-	period              uint
+	disconnect    chan bool
+	statusTimeout *time.Timer
+	waitGroup     *sync.WaitGroup
 
 	// callbacks for packet reception
 	responseCallbacks map[crtpPort](*list.List)
@@ -57,12 +51,9 @@ type Crazyflie struct {
 	paramIndexToName map[uint8]string
 }
 
-func Connect(radio *crazyradio.RadioDevice, address uint64, channel uint8) (*Crazyflie, error) {
+func Connect(address uint64, channel uint8) (*Crazyflie, error) {
 	cf := new(Crazyflie)
-	cf.radio = radio
 
-	cf.address = address
-	cf.channel = channel
 	cf.firmwareAddress = address // we save explicitly the firmware address and channel since a restart to bootloader will overwrite the current radio settings
 	cf.firmwareChannel = channel
 
@@ -75,61 +66,17 @@ func Connect(radio *crazyradio.RadioDevice, address uint64, channel uint8) (*Cra
 }
 
 func (cf *Crazyflie) connect(address uint64, channel uint8) error {
-	var err error
-	var ackReceived bool
-
 	cf.address = address
 	cf.channel = channel
 	cf.status = StatusDisconnected
 
-	for i := 0; i < 200; i++ {
-		timeout := time.After(50 * time.Millisecond)
+	// initialize the structures required for communication and packet handling
+	cf.communicationSystemInit()
+	cf.consoleSystemInit()
+	cf.logSystemInit()
+	cf.paramSystemInit()
 
-		cf.radio.Lock()
-		err = cf.radio.SetChannel(cf.channel)
-		err = cf.radio.SetAddress(cf.address)
-		err = cf.radio.SendPacket([]byte{0xFF})       // ping the crazyflie
-		ackReceived, _, err = cf.radio.ReadResponse() // and see if it responds
-		cf.radio.Unlock()
-
-		// if it responds, we've verified connectivity and quit the loop
-		if ackReceived {
-			break
-		}
-
-		if i == 0 {
-			fmt.Printf("Connecting to 0x%X.\n", cf.address)
-		}
-
-		// otherwise we wait for 50ms and then try again
-		<-timeout
-	}
-
-	if !ackReceived || err != nil {
-		fmt.Printf("Error connecting to 0x%X (response: %t, error: %v)", address, ackReceived, err)
-		cf.status = StatusNoResponse
-
-		if err != nil {
-			return err
-		}
-		return ErrorNoResponse
-	}
-
-	fmt.Printf("Connected to 0x%X\n", cf.address)
-
-	cf.firstInit.Do(func() {
-		// initialize the structures required for communication and packet handling
-		cf.communicationSystemInit()
-		cf.consoleSystemInit()
-		cf.logSystemInit()
-		cf.paramSystemInit()
-	})
-
-	// start the crazyflie's communications thread
-	go cf.communicationLoop()
-
-	cf.status = StatusConnected
-	return nil
+	return crazyradio.CrazyflieRegister(cf.channel, cf.address, cf.responseHandler)
 }
 
 func (cf *Crazyflie) Address() uint64 {
@@ -146,14 +93,13 @@ func (cf *Crazyflie) Status() CrazyflieStatus {
 
 func (cf *Crazyflie) DisconnectImmediately() {
 	// asynchronously (& non-blocking) stops the communications thread
-	cf.disconnect <- true
-	<-cf.handlerDisconnect
+	crazyradio.CrazyflieRemove(cf.channel, cf.address)
+	close(cf.disconnect)
 	cf.status = StatusDisconnected
 }
 
 func (cf *Crazyflie) DisconnectOnEmpty() {
 	// asynchronously (& non-blocking) stops the communications thread
-	cf.disconnectOnEmpty <- true
-	<-cf.handlerDisconnect
-	cf.status = StatusDisconnected
+	cf.PacketQueueWaitForEmpty()
+	cf.DisconnectImmediately()
 }

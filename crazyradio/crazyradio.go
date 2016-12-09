@@ -1,227 +1,255 @@
 package crazyradio
 
 import (
+	"container/list"
+	"fmt"
 	"sync"
-
 	"time"
-
-	"github.com/kylelemons/gousb/usb"
 )
 
-type RadioDevice struct {
-	context *usb.Context
-	device  *usb.Device
-	lock    *sync.Mutex
-	dataOut usb.Endpoint
-	dataIn  usb.Endpoint
-	address uint64
+type packetQueue struct {
+	standardQueue  *list.List
+	priorityQueue  *list.List
+	lock           *sync.Mutex
+	packetDequeued chan bool
 }
 
-func Open() (*RadioDevice, error) {
-	ctx := usb.NewContext()
-	ctx.Debug(0)
+var radios []*RadioDevice
 
-	radios, err := ctx.ListDevices(
-		func(desc *usb.Descriptor) bool {
-			if desc.Vendor == 0x1915 && desc.Product == 0x7777 {
-				return true
-			}
-			return false
-		})
+var packetQueues map[uint8]map[uint64]*packetQueue
+var callbacks map[uint64]func([]byte)
 
-	if err != nil {
-		ctx.Close()
-		return nil, err
-	}
+var radioThreadShouldStop chan bool
+var waitGroup *sync.WaitGroup
 
-	if len(radios) == 0 {
-		ctx.Close()
-		return nil, ErrorDeviceNotFound
-	}
+var defaultPacket = []byte{0xFF}
 
-	// close all radios apart from the first one (in the case that multiple are connected)
-	for _, d := range radios[1:] {
-		d.Close()
-	}
-
-	// open the endpoint for transfers out
-	dOut, err := radios[0].OpenEndpoint(1, 0, 0, 0x01)
-
-	if err != nil {
-		radios[0].Close()
-		ctx.Close()
-		return nil, err
-	}
-
-	// open the endpoint for transfers in
-	dIn, err := radios[0].OpenEndpoint(1, 0, 0, 0x81)
-
-	if err != nil {
-		radios[0].Close()
-		ctx.Close()
-		return nil, err
-	}
-
-	radios[0].ControlTimeout = 250 * time.Millisecond
-	radios[0].ReadTimeout = 50 * time.Millisecond
-	radios[0].WriteTimeout = 50 * time.Millisecond
-
-	// now have a usb device and context pointing to the CrazyRadio!
-	radio := new(RadioDevice)
-	radio.lock = new(sync.Mutex)
-	radio.device = radios[0]
-	radio.context = ctx
-	radio.dataOut = dOut
-	radio.dataIn = dIn
-
-	// can initialize the default states!
-	radio.SetDatarate(RadioDatarate_2MPS)
-	radio.SetChannel(80)
-	radio.SetAddress(0xE7E7E7E7E7)
-	radio.SetPower(RadioPower_0DBM)
-	radio.SetArc(3)
-	radio.SetArdBytes(32)
-	return radio, nil
+func callbackRegister(address uint64, callback func([]byte)) {
+	callbacks[address] = callback
 }
 
-func (radio *RadioDevice) Close() {
-	radio.Lock()
-	radio.device.Close()
-	radio.context.Close()
-	radio.Unlock()
+func callbackRemove(address uint64) {
+	delete(callbacks, address)
 }
 
-func (radio *RadioDevice) Lock() {
-	radio.lock.Lock()
-}
+func CrazyflieRegister(channel uint8, address uint64, responseCallback func([]byte)) error {
 
-func (radio *RadioDevice) Unlock() {
-	radio.lock.Unlock()
-}
+	var ackReceived = false
+	var err error = nil
 
-func (radio *RadioDevice) SetChannel(channel uint8) error {
-	if channel > 125 {
-		return ErrorInvalidChannel
+	// first, test the crazyflie
+	for i := 0; i < 200; i++ {
+		timeout := time.After(50 * time.Millisecond)
+
+		radios[0].Lock()
+		radios[0].SetChannel(channel)
+		radios[0].SetAddress(address)
+		radios[0].SendPacket([]byte{0xFF})             // ping the crazyflie
+		ackReceived, _, err = radios[0].ReadResponse() // and see if it responds
+		radios[0].Unlock()
+
+		// if it responds, we've verified connectivity and quit the loop
+		if ackReceived {
+			break
+		}
+
+		// otherwise we wait for 50ms and then try again
+		<-timeout
 	}
 
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_RADIO_CHANNEL), uint16(channel), 0, nil)
-	return err
-}
+	if !ackReceived || err != nil {
+		fmt.Printf("Error connecting to %d/0x%X: %v", channel, address, err)
 
-func (radio *RadioDevice) SetDatarate(datarate radioDatarate) error {
-	if datarate > RadioDatarate_2MPS {
-		return ErrorInvalidDatarate
+		if err != nil {
+			return err
+		}
+		return ErrorNoResponse
 	}
 
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_DATA_RATE), uint16(datarate), 0, nil)
-	return err
-}
-
-func (radio *RadioDevice) SetPower(power radioPower) error {
-	if power > RadioPower_0DBM {
-		return ErrorInvalidPower
-	}
-
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_RADIO_POWER), uint16(power), 0, nil)
-	return err
-}
-
-func (radio *RadioDevice) SetArc(arc uint8) error {
-	if arc > 15 {
-		return ErrorInvalidArc
-	}
-
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_RADIO_ARC), uint16(arc), 0, nil)
-	return err
-}
-
-func (radio *RadioDevice) SetArdTime(delay uint8) error {
-	// Auto Retransmit Delay:
-	// 0x00 - Wait 250uS
-	// 0x01 - Wait 500uS
-	// 0x02 - Wait 750uS
-	// ........
-	// 0x0F - Wait 4000uS
-	if delay > 0x0F {
-		return ErrorInvalidArdTime
-	}
-
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_RADIO_ARD), uint16(delay), 0, nil)
-	return err
-}
-
-func (radio *RadioDevice) SetArdBytes(nbytes uint8) error {
-	// 0x00 - 0 Byte
-	// 0x01 - 1 Byte
-	// ........
-	// 0x20 - 32 Bytes
-	if nbytes > 0x20 {
-		return ErrorInvalidArdBytes
-	}
-
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_RADIO_ARD), uint16(0x80|nbytes), 0, nil)
-	return err
-}
-
-func (radio *RadioDevice) SetAckEnable(enable uint8) error {
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_ACK_ENABLE), uint16(enable), 0, nil)
-	return err
-}
-
-func (radio *RadioDevice) SetAddress(address uint64) error {
-	if radio.address == address {
-		return nil
-	}
-
-	a := make([]byte, 5)
-	a[4] = uint8((address >> 0) & 0xFF)
-	a[3] = uint8((address >> 8) & 0xFF)
-	a[2] = uint8((address >> 16) & 0xFF)
-	a[1] = uint8((address >> 24) & 0xFF)
-	a[0] = uint8((address >> 32) & 0xFF)
-
-	_, err := radio.device.Control(
-		usb.REQUEST_TYPE_VENDOR,
-		uint8(SET_RADIO_ADDRESS),
-		0,
-		0,
-		a)
-
-	if err != nil {
-		radio.address = address
-	}
-
-	return err
-}
-
-func (radio *RadioDevice) SendPacket(data []byte) error {
-	// write the outgoing packet
-	length, err := radio.dataOut.Write(data)
-	if err != nil {
-		return err
-	}
-	if len(data) != length {
-		return ErrorWriteLength
-	}
+	packetQueueGet(channel, address) // this also initializes the packet queues
+	callbackRegister(address, responseCallback)
+	fmt.Printf("Connected to %d/0x%X", channel, address)
 	return nil
 }
 
-func (radio *RadioDevice) ReadResponse() (bool, []byte, error) {
-	// read the acknowledgement
-	resp := make([]byte, 40) // largest packet size
-	length, err := radio.dataIn.Read(resp)
-	if err != nil {
-		return false, nil, err
+func CrazyflieRemove(channel uint8, address uint64) {
+	callbackRemove(address)
+	packetQueueRemove(channel, address)
+
+}
+
+func packetQueueGet(channel uint8, address uint64) *packetQueue {
+	if _, ok := packetQueues[channel]; !ok {
+		packetQueues[channel] = make(map[uint64]*packetQueue)
 	}
-	//if length {
-	//	return false, nil, ERROR_READ_LENGTH
-	//}
-	// ACK structure:
-	// uint8_t resp : 1
-	// uint8_t power detector : 1
-	// uint8_t reserved : 2
-	// uint8_t retransmission count : 4
-	// uint8_t ackdata[1:32 bytes]
-	ackReceived := (resp[0] & 0x01) != 0
-	return ackReceived, resp[1:length], nil // return just the data portion of the acknowledgement
+	channelQueues := packetQueues[channel]
+
+	if _, ok := channelQueues[address]; !ok {
+		channelQueues[address] = &packetQueue{list.New(), list.New(), new(sync.Mutex), make(chan bool)}
+	}
+
+	return channelQueues[address]
+}
+
+func packetQueueRemove(channel uint8, address uint64) {
+	delete(packetQueues[channel], address)
+	if len(packetQueues[channel]) == 0 {
+		delete(packetQueues, channel)
+	}
+}
+
+func PacketSend(channel uint8, address uint64, packet []byte) {
+	queue := packetQueueGet(channel, address)
+
+	packetCopy := make([]byte, len(packet))
+	copy(packetCopy, packet)
+
+	queue.lock.Lock()
+	queue.standardQueue.PushBack(packetCopy)
+	queue.lock.Unlock()
+}
+
+func PacketSendPriority(channel uint8, address uint64, packet []byte) {
+	queue := packetQueueGet(channel, address)
+
+	packetCopy := make([]byte, len(packet))
+	copy(packetCopy, packet)
+
+	queue.lock.Lock()
+	queue.priorityQueue.PushBack(packetCopy)
+	queue.lock.Unlock()
+}
+
+func PacketQueueWaitForEmpty(channel uint8, address uint64) {
+	queue := packetQueueGet(channel, address)
+
+	for {
+		if queue.priorityQueue.Front() == nil && queue.standardQueue.Front() == nil {
+			break
+		} else {
+			<-queue.packetDequeued // block here until the radioThread indicates one of our packets has been dequeued (after which we again check for empty)
+		}
+	}
+}
+
+func Start() error {
+	callbacks = make(map[uint64]func([]byte))
+	packetQueues = make(map[uint8]map[uint64]*packetQueue)
+
+	radioThreadShouldStop = make(chan bool)
+	waitGroup = &sync.WaitGroup{}
+
+	radio, err := Open()
+	if err != nil {
+		return err
+	}
+
+	radios = append(radios, radio)
+
+	waitGroup.Add(1)
+	go radioThread()
+
+	return nil
+}
+
+func Stop() {
+	close(radioThreadShouldStop)
+	waitGroup.Wait()
+}
+
+func radioThread() {
+	defer waitGroup.Done()
+
+	var err error
+	radio := radios[0]
+
+	for {
+		// quit if we should quit
+		select {
+		case <-radioThreadShouldStop:
+			return
+		default:
+			break
+		}
+
+		if len(packetQueues) == 0 {
+			<-time.After(10 * time.Millisecond)
+			continue
+		}
+
+		for channel, channelQueues := range packetQueues { // loop through all channels
+			// quit if we should quit
+			select {
+			case <-radioThreadShouldStop:
+				return
+			default:
+				break
+			}
+
+			for address, queue := range channelQueues {
+				// quit if we should quit
+				select {
+				case <-radioThreadShouldStop:
+					return
+				default:
+					break
+				}
+
+				queue.lock.Lock()
+
+				var packetQueue *list.List = nil
+				var packetElement *list.Element = nil
+				var packet []byte
+
+				if queue.priorityQueue.Front() != nil {
+					packetQueue = queue.priorityQueue
+					packetElement = packetQueue.Front()
+					packet = packetElement.Value.([]byte)
+				} else if queue.standardQueue.Front() != nil {
+					packetQueue = queue.standardQueue
+					packetElement = packetQueue.Front()
+					packet = packetElement.Value.([]byte)
+				} else {
+					packet = defaultPacket
+				}
+
+				queue.lock.Unlock()
+
+				radio.lock.Lock()
+
+				radio.SetChannel(channel)
+				radio.SetAddress(address)
+				err = radio.SendPacket(packet)
+				if err != nil {
+					continue
+				}
+
+				// read the response, which we then distribute to the relevant handler
+				ackReceived, resp, err := radio.ReadResponse()
+				radio.lock.Unlock()
+
+				if err != nil || !ackReceived {
+					continue // if there is an error, something is wrong... should try and retransmit the packet
+				}
+
+				if packetQueue != nil {
+					queue.lock.Lock()
+					packetQueue.Remove(packetElement) // remove the acknowledged packet, since it was successfully transmitted
+					queue.lock.Unlock()
+				}
+
+				select { // if possible (eg. if not already triggered), trigger the packetDequeued channel (used only in function WaitForEmptyPacketQueue)
+				case queue.packetDequeued <- true:
+					break
+				default: // if it has already been triggered, do nothing
+					break
+				}
+
+				// now call the crazyflie's callback (resp will have len 0 if the packet was acked with no data)
+				if callback, ok := callbacks[address]; ok {
+					go callback(resp)
+				}
+			}
+		}
+	}
 }

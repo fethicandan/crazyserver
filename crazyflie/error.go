@@ -5,7 +5,7 @@ import "fmt"
 type crazyflieError uint8
 
 func (e crazyflieError) Error() string {
-	return fmt.Sprintf("crazyflie: %s", radioErrorString[e])
+	return fmt.Sprintf("crazyflie: %s", crazyflieErrorString[e])
 }
 
 const (
@@ -23,7 +23,7 @@ const (
 	ErrorUnknown
 )
 
-var radioErrorString = map[crazyflieError]string{
+var crazyflieErrorString = map[crazyflieError]string{
 	ErrorNoResponse:             "not responding",
 	ErrorLogBlockOrItemNotFound: "log block or item not found",
 	ErrorLogBlockNoMemory:       "no memory to allocated log block",

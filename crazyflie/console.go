@@ -7,8 +7,6 @@ func (cf *Crazyflie) consoleSystemInit() {
 }
 
 func (cf *Crazyflie) handleConsoleResponse(resp []byte) {
-	cf.lastUpdate = 0
-
 	str := string(resp[1:])
 	for {
 		i := strings.Index(str, "\n")

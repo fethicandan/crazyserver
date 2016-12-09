@@ -71,32 +71,29 @@ func main() {
 		crazyserver.ServeCommand,
 	}
 
+	// Initalize the radio and cache
+	err := crazyradio.Start()
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer crazyradio.Stop()
+	cache.Init()
+
 	app.Run(os.Args)
 }
 
 func testCommand(context *cli.Context) error {
-	var err error
-
-	radio, err := crazyradio.Open()
+	// connect to each crazyflie
+	cf, err := crazyflie.Connect(0xE7E7E7E701, 80)
 	if err != nil {
-		log.Fatal(err)
+		log.Print("Error connecting: ", err)
 	}
-	defer radio.Close()
 
-	t := time.Now()
-	for i := 0; i < 10000; i++ {
-		err = radio.SetAddress(0xE7E7E7E7E7)
-		if err != nil {
-			log.Fatal(err)
-		}
-		err = radio.SetAddress(0xE7E7E7E7E6)
-		if err != nil {
-			log.Fatal(err)
-		}
-	}
-	dt := time.Now().Sub(t)
+	cache.Clear()
+	cache.Init()
 
-	fmt.Printf("%f\n,", 1.0e-6*float64(dt.Nanoseconds())/20000.0)
+	cf.LogTOCGetList()
+
 	return nil
 }
 
@@ -159,13 +156,6 @@ func flashCommand(context *cli.Context) error {
 		addressIdx++
 	}
 
-	// Initalize the radio and cache
-	radio, err := crazyradio.Open()
-	if err != nil {
-		log.Fatal(err)
-	}
-	cache.Init()
-
 	// Prepare to connect to multiple crazyflies for parallel flashing
 	progressBars := make([]*pb.ProgressBar, 0, len(addressSlice))
 	progressChannels := make([]chan int, 0, len(addressSlice))
@@ -174,7 +164,7 @@ func flashCommand(context *cli.Context) error {
 	for _, address := range addressSlice {
 
 		// connect to each crazyflie
-		cf, err := crazyflie.Connect(radio, address, channel)
+		cf, err := crazyflie.Connect(address, channel)
 		if err != nil {
 			log.Printf("Error connecting to 0x%X: %s", address, err)
 			continue
@@ -249,8 +239,6 @@ func flashCommand(context *cli.Context) error {
 	}
 	wg.Wait()
 	pool.Stop()
-
-	radio.Close()
 
 	<-time.After(1 * time.Second)
 

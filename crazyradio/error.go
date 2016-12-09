@@ -10,6 +10,7 @@ func (e radioError) Error() string {
 
 const (
 	ErrorDeviceNotFound radioError = iota
+	ErrorNoResponse
 	ErrorInvalidChannel
 	ErrorInvalidDatarate
 	ErrorInvalidPower
@@ -21,6 +22,7 @@ const (
 
 var radioErrorString = map[radioError]string{
 	ErrorDeviceNotFound:  "device not found",
+	ErrorNoResponse:      "no response from crazyflie",
 	ErrorInvalidChannel:  "invalid channel",
 	ErrorInvalidDatarate: "invalid datarate",
 	ErrorInvalidPower:    "invalid power",
