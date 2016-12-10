@@ -37,10 +37,12 @@ func serveCommandHandler(ctx *cli.Context) error {
 
 	r := mux.NewRouter()
 
+	rv1 := r.PathPrefix("/v1").Subrouter()
+
 	// Initialize routes
-	r.HandleFunc("/fleet", fleetIndexHandler).Methods("GET")
-	addremoveInitRoute(r)
-	paramInitRoute(r)
+	rv1.HandleFunc("/fleet", fleetIndexHandler).Methods("GET")
+	addremoveInitRoute(rv1)
+	paramInitRoute(rv1)
 
 	// Optional static file server (for making standalone client)
 	if len(staticPath) > 0 {
@@ -55,6 +57,8 @@ func serveCommandHandler(ctx *cli.Context) error {
 	return nil
 }
 
+// crazyflieHandleFunc returns a path handle function that decodes the Crazyflie ID from the URL, recover the Crazyflie object
+// and call a path handle function with the Crazyflie object as argument.
 func crazyflieHandleFunc(handleFunc func(w http.ResponseWriter, r *http.Request, cf *crazyflie.Crazyflie)) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		cfid := int(-1)
