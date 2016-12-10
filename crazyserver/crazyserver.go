@@ -55,6 +55,23 @@ func serveCommandHandler(ctx *cli.Context) error {
 	return nil
 }
 
+func crazyflieHandleFunc(handleFunc func(w http.ResponseWriter, r *http.Request, cf *crazyflie.Crazyflie)) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		cfid := int(-1)
+		fmt.Sscanf(mux.Vars(r)["id"], "%d", &cfid)
+
+		crazyfliesLock.Lock()
+		cf, ok := crazyflies[cfid]
+		crazyfliesLock.Unlock()
+		if ok == false {
+			respondError(w, r, http.StatusNotFound, "Crazyflie not found")
+			return
+		}
+
+		handleFunc(w, r, cf)
+	}
+}
+
 type fleetIndexResponse struct {
 	Connected []string `json:"connected"`
 }

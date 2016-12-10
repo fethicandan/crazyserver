@@ -2,32 +2,21 @@ package crazyserver
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/gorilla/mux"
+	"github.com/mikehamer/crazyserver/crazyflie"
 )
 
 func paramInitRoute(r *mux.Router) {
-	r.HandleFunc("/fleet/crazyflie{id:[0-9]+}/param", paramIndex).Methods("GET")
+	r.HandleFunc("/fleet/crazyflie{id:[0-9]+}/param", crazyflieHandleFunc(paramIndex)).Methods("GET")
 }
 
 type paramIndexResponse struct {
 	Params map[string]float64 `json:"params"`
 }
 
-func paramIndex(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	cfid := int(-1)
-	fmt.Sscanf(vars["id"], "%d", &cfid)
-
-	crazyfliesLock.Lock()
-	cf, ok := crazyflies[cfid]
-	crazyfliesLock.Unlock()
-	if ok == false {
-		respondError(w, r, http.StatusNotFound, "Crazyflie not found")
-	}
-
+func paramIndex(w http.ResponseWriter, r *http.Request, cf *crazyflie.Crazyflie) {
 	resp := paramIndexResponse{}
 	resp.Params = make(map[string]float64)
 
