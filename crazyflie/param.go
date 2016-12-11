@@ -47,10 +47,27 @@ var paramTypeToSize = map[uint8]uint8{
 	0x6: 4,
 }
 
+var paramTypeToName = map[uint8]string{
+	0x8: "uint8",
+	0x9: "uint16",
+	0xA: "uint32",
+	0x0: "int8",
+	0x1: "int16",
+	0x2: "int32",
+	0x6: "float",
+}
+
 type paramItem struct {
 	ID       uint8
 	Datatype uint8
 	Readonly bool
+}
+
+type ParamTocItem struct {
+	Group  string
+	Name   string
+	Type   string
+	Access string // "RW" or "RO"
 }
 
 func (cf *Crazyflie) paramSystemInit() {
@@ -173,6 +190,24 @@ func (cf *Crazyflie) ParamGetList() []string {
 	return list
 }
 
+func (cf *Crazyflie) ParamGetToc() []ParamTocItem {
+	list := make([]ParamTocItem, cf.paramCount)
+
+	for name, idx := range cf.paramNameToIndex {
+		splitName := strings.Split(name, ".")
+		list[idx.ID].Group = splitName[0]
+		list[idx.ID].Name = splitName[1]
+		list[idx.ID].Type = paramTypeToName[idx.Datatype]
+		if idx.Readonly {
+			list[idx.ID].Access = "RO"
+		} else {
+			list[idx.ID].Access = "RW"
+		}
+	}
+
+	return list
+}
+
 func (cf *Crazyflie) ParamRead(name string) (interface{}, error) {
 	param, ok := cf.paramNameToIndex[name]
 	if !ok {
@@ -205,6 +240,34 @@ func (cf *Crazyflie) ParamRead(name string) (interface{}, error) {
 	case <-time.After(500 * time.Millisecond):
 		return nil, ErrorNoResponse
 	}
+}
+
+func (cf *Crazyflie) ParamWriteFromFloat64(name string, valf float64) error {
+	param, ok := cf.paramNameToIndex[name]
+	if !ok {
+		return ErrorParamNotFound
+	}
+
+	var val interface{}
+
+	switch param.Datatype {
+	case 0x8:
+		val = uint8(valf)
+	case 0x9:
+		val = uint16(valf)
+	case 0xA:
+		val = uint32(valf)
+	case 0x0:
+		val = int8(valf)
+	case 0x1:
+		val = int16(valf)
+	case 0x2:
+		val = int32(valf)
+	case 0x6:
+		val = float32(valf)
+	}
+
+	return cf.ParamWrite(name, val)
 }
 
 func (cf *Crazyflie) ParamWrite(name string, val interface{}) error {

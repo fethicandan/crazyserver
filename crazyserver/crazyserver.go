@@ -37,12 +37,13 @@ func serveCommandHandler(ctx *cli.Context) error {
 
 	r := mux.NewRouter()
 
-	rv1 := r.PathPrefix("/v1").Subrouter()
+	rv1 := r.PathPrefix("/v1").Subrouter()                           // API base router
+	rcf := rv1.PathPrefix("/fleet/crazyflie{id:[0-9]+}").Subrouter() // Crazyflie router
 
 	// Initialize routes
 	rv1.HandleFunc("/fleet", fleetIndexHandler).Methods("GET")
 	addremoveInitRoute(rv1)
-	paramInitRoute(rv1)
+	paramInitRoute(rcf)
 
 	// Optional static file server (for making standalone client)
 	if len(staticPath) > 0 {
