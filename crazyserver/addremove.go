@@ -21,6 +21,10 @@ type fleetAddRequest struct {
 	Channel *uint8  `json:"channel"`
 }
 
+type fleetAddResponse struct {
+	Location string `json:"location"`
+}
+
 func fleetAddHandler(w http.ResponseWriter, r *http.Request) {
 	var req fleetAddRequest
 	err := json.NewDecoder(r.Body).Decode(&req)
@@ -52,8 +56,11 @@ func fleetAddHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-type", "application/json; charset=UTF-8")
-	w.Header().Set("Location", fmt.Sprintf("/fleet/crazyflie%d", cfid))
+	w.Header().Set("Location", fmt.Sprintf("/v1/fleet/crazyflie%d", cfid))
 	w.WriteHeader(http.StatusOK)
+
+	resp := fleetAddResponse{Location: fmt.Sprintf("/v1/fleet/crazyflie%d", cfid)}
+	json.NewEncoder(w).Encode(resp)
 }
 
 func fleetRemoveHandler(w http.ResponseWriter, r *http.Request) {
@@ -72,6 +79,8 @@ func fleetRemoveHandler(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
+
+	fmt.Fprint(w, "{}")
 }
 
 // Low utility functions to add and remove Crazyflie from the server
