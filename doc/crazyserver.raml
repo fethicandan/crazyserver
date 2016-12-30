@@ -1,0 +1,238 @@
+#%RAML 1.0
+title: Crazyflie server
+version: v1
+baseUri: /{version}
+
+mediaType: application/json
+
+annotationTypes:
+  draft:
+    type: nil
+    displayName: Draft API (not implemented)
+    description:  Not implemented yet. Proposal API.
+
+/fleet:
+  description: Connect, list and disconnect Crazyflies
+  post:
+    description: Connect a crazyflie by providing its connection settings
+    body:
+      application/json:
+        type: object
+        properties:
+          addess:
+            type: string
+          channel:
+            type: integer
+    responses:
+      200:
+        headers:
+          location:
+            description: Full location of the connected Crazyflie
+            example: /{version}/fleet/crazyflie0
+        body:
+          type: object
+          properties:
+            location:
+              type: string
+              description: Name of the connected Crazyflie
+              example: crazyflie0
+      404:
+        body:
+          type: object
+          properties:
+              error:
+                type: string
+  get:
+    description: List currently connected Crazyflies.
+    responses:
+      200:
+        body:
+          type: object
+          properties:
+            connected:
+              type: array
+              items: string
+              description: |
+                Name of the connected Crazyflies. Identical to the location
+                under /fleet
+      404:
+        body:
+          type: object
+          properties:
+              error:
+                type: string
+  delete:
+    description: Disconnect a Crazyflie
+
+/fleet/crazyflie{n}:
+  description: Communicate with and control a Crazyflie
+  uriParameters:
+    n:
+      type: integer
+      description: Crazyflie connection id
+  /commander:
+    put:
+      description: Send a commander (setpoint) packet to the Crazyflie
+  /param:
+    /params:
+      get:
+        description: List all params and there values
+    /params/{group}/{name}:
+      uriParameters:
+        group:
+          type: string
+          description: Group of the parameter to access
+        name:
+          type: string
+          description: Name of the parameter to access
+      get:
+        description: Get a single parameter value
+        responses:
+          200:
+            body:
+              type: object
+              properties:
+                group:
+                  type: string
+                name:
+                  type: string
+                value:
+                  type: number
+          404:
+            body:
+              type: object
+              properties:
+                  error:
+                    type: string
+      put:
+        description: Set a single parameter value
+        body:
+          type: object
+          properties:
+            value:
+              type: number
+        responses:
+          200:
+            body:
+              type: object
+              properties:
+                group:
+                  type: string
+                name:
+                  type: string
+                value:
+                  type: number
+          400:
+            body:
+              type: object
+              properties:
+                  error:
+                    type: string
+
+/sockets:
+  (draft):
+  description: |
+    **This full section is still a draft**
+
+    Sockets are a way for low latency real time communication with the server
+    they are first created and then binded to the different subsystems. See
+    the Crazyflie subsystem API to create binging. For all sockets types the
+    format is line delimited json object stream. The object contains
+    2 elements, source and data. Example of stream sent from the server:
+    ``` json
+      {"source":"crazyflie0/console", "data": {"console": "Hello world"}}
+      {"source": "crazyflie0/log/orientation", "data": {"roll": 0.0, "pitch": 1.0, "yaw": 3.0}}
+    ```
+    Exemple of stream sent to the server:
+    ``` json
+      {"dest": "crazyflie0/commander", "data": {"roll": 0.0, "pitch": 1.0, "yawrate": 0.0, "thrust": 35465}}
+      {"dest": "crazyflie0/commander", "data": {"roll": 0.0, "pitch": 1.0, "yawrate": 0.0, "thrust": 35334}}
+    ```
+  /tcp:
+    get:
+      description: List TCP sockets
+      responses:
+        200:
+          body:
+            type: object
+            properties:
+              connected:
+                type: array
+                items: string
+                description: List of connected sockets
+              disconnected:
+                type: array
+                items: string
+                description: List of setup but not connected sockets
+    post:
+    #   # description: Create a ready-to-connect TCP socket
+    /{socket}:
+      get:
+        description: Get socket information
+        responses:
+          200:
+            body:
+              type: object
+              properties:
+                address:
+                  type: string
+                port:
+                  type: integer
+                bindings:
+                  type: array
+                  items: string
+          404:
+            description: Socket not found
+            body:
+              type: object
+              properties:
+                error:
+                  type: string
+      delete:
+        description: Disconnect, unbind, and delete socket.
+        body:
+          type: object
+        responses:
+          200:
+            body:
+              type: object
+          404:
+            description: Socket not found
+            body:
+              type: object
+              properties:
+                error:
+                  type: string
+
+  /udp:
+    get:
+      description: List UDP sockets
+      responses:
+        200:
+          body:
+            type: object
+            properties:
+              out:
+                type: array
+                items: string
+                description: List of out sockets
+              in:
+                type: array
+                items: string
+                description: List of in sockets
+  /web:
+    description: |
+      Websockets are established by converting http connection into a Websocket
+      connection. They cannot be created or removed from the API, they will
+      appear in the list when connected.
+    get:
+      description: List WebSockets
+      responses:
+        200:
+          body:
+            type: object
+            properties:
+              connected:
+                type: array
+                items: string
+                description: List of connected sockets
