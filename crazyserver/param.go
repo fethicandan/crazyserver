@@ -130,4 +130,7 @@ func paramAccess(w http.ResponseWriter, r *http.Request, cf *crazyflie.Crazyflie
 	w.WriteHeader(http.StatusOK)
 
 	json.NewEncoder(w).Encode(resp)
+
+	// Send updated/fetched parameter to socket
+	socketSendData(r.RequestURI, resp)
 }

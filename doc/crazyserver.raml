@@ -135,18 +135,21 @@ annotationTypes:
     **This full section is still a draft**
 
     Sockets are a way for low latency real time communication with the server
-    they are first created and then binded to the different subsystems. See
-    the Crazyflie subsystem API to create binging. For all sockets types the
-    format is line delimited json object stream. The object contains
-    2 elements, source and data. Example of stream sent from the server:
+    Once created, out socket send all real time update and in socket can receive
+    real time data to be sent to the copter. The data format is a stream of
+    json object containing source/dest and a data object. When relevant the
+    source/dest corresponds to a URI of the REST API and the data to the body
+    of the corresponding REST API endpoint.
+
+    Example of out stream sent from the server:
     ``` json
-      {"source":"crazyflie0/console", "data": {"console": "Hello world"}}
-      {"source": "crazyflie0/log/orientation", "data": {"roll": 0.0, "pitch": 1.0, "yaw": 3.0}}
+      {"source":"v1/fleet/crazyflie0/console", "data": {"console": "Hello world"}}
+      {"source": "v1/fleet/crazyflie0/log/orientation", "data": {"roll": 0.0, "pitch": 1.0, "yaw": 3.0}}
     ```
-    Exemple of stream sent to the server:
+    Exemple of in stream sent to the server:
     ``` json
-      {"dest": "crazyflie0/commander", "data": {"roll": 0.0, "pitch": 1.0, "yawrate": 0.0, "thrust": 35465}}
-      {"dest": "crazyflie0/commander", "data": {"roll": 0.0, "pitch": 1.0, "yawrate": 0.0, "thrust": 35334}}
+      {"dest": "v1/fleet/crazyflie0/commander", "data": {"roll": 0.0, "pitch": 1.0, "yawrate": 0.0, "thrust": 35465}}
+      {"dest": "v1/fleet/crazyflie0/commander", "data": {"roll": 0.0, "pitch": 1.0, "yawrate": 0.0, "thrust": 35334}}
     ```
   /tcp:
     get:
@@ -165,7 +168,6 @@ annotationTypes:
                 items: string
                 description: List of setup but not connected sockets
     post:
-    #   # description: Create a ready-to-connect TCP socket
     /{socket}:
       get:
         description: Get socket information
@@ -220,11 +222,11 @@ annotationTypes:
                 type: array
                 items: string
                 description: List of in sockets
-  /web:
+  /websoclet:
     description: |
-      Websockets are established by converting http connection into a Websocket
-      connection. They cannot be created or removed from the API, they will
-      appear in the list when connected.
+      Websockets are established by converting http GET request to the websocket
+      index into a Websocket connection. They cannot be created or removed from
+      the API, they will appear in the list when connected.
     get:
       description: List WebSockets
       responses:
@@ -232,7 +234,7 @@ annotationTypes:
           body:
             type: object
             properties:
-              connected:
+              sockets:
                 type: array
                 items: string
                 description: List of connected sockets

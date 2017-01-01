@@ -43,6 +43,7 @@ func serveCommandHandler(ctx *cli.Context) error {
 	// Initialize routes
 	rv1.HandleFunc("/fleet", fleetIndexHandler).Methods("GET")
 	addremoveInitRoute(rv1)
+	socketsInitRoute(rv1)
 	paramInitRoute(rcf)
 	commanderInitRoute(rcf)
 
