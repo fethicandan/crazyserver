@@ -60,18 +60,13 @@ func OpenAllRadios() ([]*RadioDevice, error) {
 	usbContext := usb.NewContext()
 	usbContext.Debug(0)
 
-	radioDevices, err := usbContext.ListDevices(
+	radioDevices, _ := usbContext.ListDevices(
 		func(desc *usb.Descriptor) bool {
 			if desc.Vendor == 0x1915 && desc.Product == 0x7777 {
 				return true
 			}
 			return false
 		})
-
-	if err != nil {
-		usbContext.Close()
-		return nil, err
-	}
 
 	if len(radioDevices) == 0 {
 		usbContext.Close()
