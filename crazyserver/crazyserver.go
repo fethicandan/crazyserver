@@ -54,6 +54,9 @@ func serveCommandHandler(ctx *cli.Context) error {
 		r.Handle("/favicon.ico", http.FileServer(http.Dir(staticPath)))
 	}
 
+	// Export the router in a module variable to allow sockets to use it
+	rootSocketRouter = r
+
 	fmt.Println("Starting the server ...")
 	fmt.Printf("Listenning on 127.0.0.1:%d\n", port)
 	http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", port), r)

@@ -122,8 +122,7 @@ func websocketIndexHandle(w http.ResponseWriter, r *http.Request) {
 		// In routine
 		go func() {
 			for {
-				var message interface{}
-				err := conn.ReadJSON(message)
+				_, msgbin, err := conn.ReadMessage()
 				if err != nil {
 					log.Println(name, "IN error, disconnecting!")
 					conn.Close()
@@ -136,7 +135,8 @@ func websocketIndexHandle(w http.ResponseWriter, r *http.Request) {
 					out <- nil
 					return
 				}
-				in <- message
+
+				go socketMakeRestRequest(sk, string(msgbin))
 			}
 		}()
 
@@ -167,3 +167,100 @@ func websocketIndexHandle(w http.ResponseWriter, r *http.Request) {
 }
 
 // TODO: UDP and TCP socket implementations
+
+type socketRestRequest struct {
+	ID          *interface{} `json:"id"`
+	Method      string       `json:"method"`
+	Path        string       `json:"path"`
+	Data        interface{}  `json:"data"`
+	ContentType *string      `json:"content-type"`
+}
+
+type socketRestAnswer struct {
+	ID          *interface{} `json:"id,omitempty"`
+	Data        interface{}  `json:"data"`
+	Code        int          `json:"code"`
+	ContentType string       `json:"content-type"`
+}
+
+var rootSocketRouter *mux.Router
+
+// Functions to interface the HTTP REST API
+// This function can be lauched as a goroutine to execute the request
+// The request is encapsulated in a JSON object with the followind fields:
+//   - id: Optional, ID of the transaction. Useful to match request to answer. Can be any JSON value.
+//   - method: HTTP method, for example "GET"
+//   - path: The path to access. Example "/fleet/crazyflie0/commander"
+//   - data: Data passed in the request body. Either a JSON object or a string
+//   - content-type: Optional, content type. Default to "application/json; charset=UTF-8"
+// The answer is a JSON object containing the fields:
+//   - id: Optional, matches the request ID
+//   - data: JSON object if the answer is of JSON type, string instead
+//   - code: HTTP response code
+//   - content-type: Content type of the answer
+func socketMakeRestRequest(sk socket, request string) {
+	var req socketRestRequest
+	err := json.Unmarshal([]byte(request), &req)
+
+	if err != nil || (req.Method != "GET" &&
+		req.Method != "PUT" &&
+		req.Method != "POST" &&
+		req.Method != "DELETE") {
+		sk.out <- socketRestAnswer{
+			Data:        `{"error": "Invalid request format"}`,
+			Code:        400,
+			ContentType: "application/json; charset=UTF-8",
+		}
+		return
+	}
+
+	dataString, _ := json.Marshal(req.Data)
+
+	r, _ := http.NewRequest(req.Method, req.Path, strings.NewReader(string(dataString)))
+	w := newStringResponseWriter()
+	rootSocketRouter.ServeHTTP(w, r)
+
+	var body interface{}
+	var contentType string
+	if encoding, ok := w.Header()["Content-Type"]; ok && len(encoding) > 0 &&
+		strings.Contains(strings.ToUpper(encoding[0]), "JSON") {
+		json.Unmarshal([]byte(w.Body), &body)
+		contentType = "application/json; charset=UTF-8"
+	} else {
+		body = w.Body
+		contentType = "text/plain; charset=UTF-8"
+	}
+
+	sk.out <- socketRestAnswer{
+		ID:          req.ID,
+		Code:        w.ResponseCode,
+		Data:        body,
+		ContentType: contentType,
+	}
+}
+
+// responseWriter that stores the restonse in a string
+type stringResponseWriter struct {
+	header       http.Header
+	Body         string
+	ResponseCode int
+}
+
+func newStringResponseWriter() *stringResponseWriter {
+	return &stringResponseWriter{
+		header: make(http.Header),
+	}
+}
+
+func (resp *stringResponseWriter) Header() http.Header {
+	return resp.header
+}
+
+func (resp *stringResponseWriter) Write(data []byte) (int, error) {
+	resp.Body = resp.Body + string(data)
+	return len(data), nil
+}
+
+func (resp *stringResponseWriter) WriteHeader(code int) {
+	resp.ResponseCode = code
+}
