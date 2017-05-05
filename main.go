@@ -34,13 +34,13 @@ func main() {
 			Flags: []cli.Flag{
 				cli.UintFlag{
 					Name:  "channel",
-					Value: 80,
-					Usage: "Set the radio channel",
+					Value: 10,
+					Usage: "Set the radio channel (default is channel: 10)",
 				},
-				cli.Uint64Flag{
+				cli.StringFlag{
 					Name:  "address",
-					Value: 0xE7E7E7E701,
-					Usage: "Set the radio address",
+					Value: "E7E7E7E701",
+					Usage: "Set the radio address (default is address: E7E7E7E701)",
 				},
 			},
 			Action: testCommand,
@@ -84,14 +84,61 @@ func main() {
 
 func testCommand(context *cli.Context) error {
 	// connect to each crazyflie
-	cf, err := crazyflie.Connect(0xE7E7E7E701, 80)
-	if err != nil {
-		log.Fatal("Error connecting: ", err)
+	channel := uint8(context.Uint("channel"))
+	addresses := strings.Split(context.String("address"), ",")
+
+	// a set to hold the unique addresses that we need to flash
+	addressSet := make(map[uint64]bool)
+	// parse the address string, allowing for formatting
+	for _, address := range addresses {
+		addressrange := strings.Split(address, "-") // eg we handle the case E7E7E7E701-07, if there is no -, this should still work.
+
+		lowaddressstring := strings.TrimPrefix(addressrange[0], "0x") // trim any leading hex prefix
+
+		lowaddress, err := strconv.ParseUint(lowaddressstring, 16, 64)
+		if err != nil {
+			log.Printf("Error parsing address %s", lowaddressstring)
+			continue
+		}
+
+		highaddresslowpart := strings.TrimPrefix(addressrange[len(addressrange)-1], "0x")          // eg 07
+		highaddresshighpart := lowaddressstring[0 : len(lowaddressstring)-len(highaddresslowpart)] // eg E7E7E7E7 | 01
+		highaddress, err := strconv.ParseUint(highaddresshighpart+highaddresslowpart, 16, 64)
+		if err != nil {
+			log.Printf("Error parsing address %s", highaddresshighpart+highaddresslowpart)
+			continue
+		}
+
+		for i := lowaddress; i <= highaddress; i++ {
+			addressSet[i] = true
+		}
 	}
 
-	// cache.Clear()
+	// now convert the set into a slice for easier processing
+	addressSlice := make([]uint64, len(addressSet))
+	addressIdx := 0
+	for k := range addressSet {
+		addressSlice[addressIdx] = k
+		addressIdx++
+	}
 
-	cf.LogTOCGetList()
+	// Prepare to connect to multiple crazyflies for parallel flashing
+	for _, address := range addressSlice {
+		fmt.Printf("0x%X: ", address)
+
+		// connect to each crazyflie
+		cf, err := crazyflie.Connect(address, channel)
+		if err != nil {
+			fmt.Printf("Error (%s)\n", address, err)
+			continue
+		}
+		err = cf.LogTOCGetList()
+		if err != nil {
+			fmt.Printf("Error (%s)\n", address, err)
+			continue
+		}
+		fmt.Println("Success")
+	}
 
 	return nil
 }

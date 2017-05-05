@@ -21,7 +21,7 @@ var ServeCommand cli.Command = cli.Command{
 		cli.UintFlag{
 			Name:  "port, p",
 			Value: 8000,
-			Usage: "HTTP Listenning port",
+			Usage: "HTTP Listening port",
 		},
 		cli.StringFlag{
 			Name:  "static, s",
@@ -58,7 +58,7 @@ func serveCommandHandler(ctx *cli.Context) error {
 	rootSocketRouter = r
 
 	fmt.Println("Starting the server ...")
-	fmt.Printf("Listenning on 127.0.0.1:%d\n", port)
+	fmt.Printf("Listening on 127.0.0.1:%d\n", port)
 	http.ListenAndServe(fmt.Sprintf("127.0.0.1:%d", port), r)
 	return nil
 }
