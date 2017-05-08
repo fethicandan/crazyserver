@@ -20,6 +20,11 @@ const (
 
 	ErrorFlashDataTooLarge
 
+	ErrorMemLengthTooLarge
+	ErrorMemReadFailed
+	ErrorMemWriteFailed
+	ErrorMemReadChecksum
+
 	ErrorUnknown
 )
 
@@ -33,6 +38,11 @@ var crazyflieErrorString = map[crazyflieError]string{
 	ErrorParamNotFound: "parameter not found",
 
 	ErrorFlashDataTooLarge: "image is too large for flash",
+
+	ErrorMemLengthTooLarge: "trying to read/write too many bytes",
+	ErrorMemReadFailed:     "memory read returned a non-zero status",
+	ErrorMemWriteFailed:    "memory write failed",
+	ErrorMemReadChecksum:   "memory read failed with incorrect checksum after a number of attempts",
 
 	ErrorUnknown: "an unknown error occurred",
 }

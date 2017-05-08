@@ -1,8 +1,6 @@
 package crazyflie
 
-import (
-	"time"
-)
+import "time"
 
 //https://forum.bitcraze.io/viewtopic.php?f=9&t=1488
 

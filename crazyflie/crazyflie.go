@@ -35,6 +35,9 @@ type Crazyflie struct {
 	// console printing
 	accumulatedConsolePrint string
 
+	// eeprom contents
+	memoryContents []byte
+
 	// log variables
 	logCount       int
 	logCRC         uint32
@@ -75,8 +78,19 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 	cf.consoleSystemInit()
 	cf.logSystemInit()
 	cf.paramSystemInit()
+	cf.memSystemInit()
 
-	return crazyradio.CrazyflieRegister(cf.channel, cf.address, cf.responseHandler)
+	err := crazyradio.CrazyflieRegister(cf.channel, cf.address, cf.responseHandler)
+	if err != nil {
+		return err
+	}
+
+	err = cf.memReadContents()
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (cf *Crazyflie) Address() uint64 {

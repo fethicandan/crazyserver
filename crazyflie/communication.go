@@ -57,6 +57,52 @@ func (cf *Crazyflie) PacketSendPriority(packet []byte) {
 	crazyradio.PacketSendPriority(cf.channel, cf.address, packet)
 }
 
+func (cf *Crazyflie) packetCustomSendAwaitResponseOnChannelPort(packet []byte, awaitPort byte, awaitChannel byte, timeout time.Duration, sendFunction func([]byte)) ([]byte, error) {
+	// the function which matches and acts on the response packet
+	callbackTriggered := make(chan []byte)
+	callback := func(resp []byte) {
+		header := crtpHeader(resp[0])
+
+		// should check the header port and channel like this (rather than check the hex value of resp[0]) since the link bits might vary(?)
+		if header.port() == crtpPort(awaitPort) && header.channel() == awaitChannel {
+			callbackTriggered <- resp[1:]
+		}
+	}
+
+	// add the callback to the list
+	e := cf.responseCallbacks[crtpPort(awaitPort)].PushBack(callback)
+	defer cf.responseCallbacks[crtpPort(awaitPort)].Remove(e) // and remove it once we're done
+
+	sendFunction(packet) // schedule transmission of the packet
+
+	select {
+	case data := <-callbackTriggered:
+		return data, nil
+	case <-time.After(timeout):
+		return nil, ErrorNoResponse
+	}
+}
+
+func (cf *Crazyflie) PacketSendAwaitResponseOnChannelPort(packet []byte, awaitPort byte, awaitChannel byte, timeout time.Duration) ([]byte, error) {
+	return cf.packetCustomSendAwaitResponseOnChannelPort(packet, awaitPort, awaitChannel, timeout, cf.PacketSend)
+}
+
+func (cf *Crazyflie) PacketSendPriorityAwaitResponseOnChannelPort(packet []byte, awaitPort byte, awaitChannel byte, timeout time.Duration) ([]byte, error) {
+	return cf.packetCustomSendAwaitResponseOnChannelPort(packet, awaitPort, awaitChannel, timeout, cf.PacketSendPriority)
+}
+
+func (cf *Crazyflie) PacketSendAwaitResponse(packet []byte, timeout time.Duration) ([]byte, error) {
+	awaitPort := byte(crtpHeader(packet[0]).port())
+	awaitChannel := crtpHeader(packet[0]).channel()
+	return cf.PacketSendAwaitResponseOnChannelPort(packet, awaitPort, awaitChannel, timeout)
+}
+
+func (cf *Crazyflie) PacketSendPriorityAwaitResponse(packet []byte, timeout time.Duration) ([]byte, error) {
+	awaitPort := byte(crtpHeader(packet[0]).port())
+	awaitChannel := crtpHeader(packet[0]).channel()
+	return cf.PacketSendPriorityAwaitResponseOnChannelPort(packet, awaitPort, awaitChannel, timeout)
+}
+
 // Waits for the packet queues to be empty
 func (cf *Crazyflie) PacketQueueWaitForEmpty() {
 	crazyradio.PacketQueueWaitForEmpty(cf.channel, cf.address)

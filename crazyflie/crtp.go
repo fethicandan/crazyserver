@@ -2,6 +2,7 @@ package crazyflie
 
 type crtpHeader byte
 type crtpPort byte
+type crtpSpeed byte
 
 const (
 	crtpPortConsole  crtpPort = 0x00

@@ -29,8 +29,8 @@ func main() {
 
 	app.Commands = []cli.Command{
 		{
-			Name:  "test",
-			Usage: "Run test codes, for development purposes",
+			Name:  "test-connection",
+			Usage: "Test whether a given Crazyflie is responding",
 			Flags: []cli.Flag{
 				cli.UintFlag{
 					Name:  "channel",
@@ -39,7 +39,25 @@ func main() {
 				},
 				cli.StringFlag{
 					Name:  "address",
-					Value: "E7E7E7E701",
+					Value: "E7E7E7E702",
+					Usage: "Set the radio address (default is address: E7E7E7E701)",
+				},
+			},
+			Action: testConnectionCommand,
+		},
+
+		{
+			Name:  "test",
+			Usage: "Run test codes, for development purposes",
+			Flags: []cli.Flag{
+				cli.UintFlag{
+					Name:  "channel",
+					Value: 10,
+					Usage: "Set the radio channel (default is channel: 10)",
+				},
+				cli.Uint64Flag{
+					Name:  "address",
+					Value: 0xE7E7E7E702,
 					Usage: "Set the radio address (default is address: E7E7E7E701)",
 				},
 			},
@@ -59,7 +77,7 @@ func main() {
 				cli.StringFlag{
 					Name:  "address",
 					Value: "0",
-					Usage: "Set the radio address (default is bootloader address: 0)",
+					Usage: "Set the radio address (default is bootloader address: 0).\nIt is also possible to enter a range of addresses, for example E7E7E7E701-03,E7E7E7E705 will flash Crazyflies 01,02,03 and 05.",
 				},
 				cli.BoolFlag{
 					Name:  "verify, v",
@@ -83,6 +101,26 @@ func main() {
 }
 
 func testCommand(context *cli.Context) error {
+	channel := uint8(context.Uint("channel"))
+	address := context.Uint64("address")
+
+	cf, err := crazyflie.Connect(0, 0)
+	if err != nil {
+		return err
+	}
+
+	cf.MemCommitAddress(address)
+	cf.MemCommitChannel(channel)
+	cf.MemCommitSpeed(2)
+	err = cf.MemPushCommits()
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func testConnectionCommand(context *cli.Context) error {
 	// connect to each crazyflie
 	channel := uint8(context.Uint("channel"))
 	addresses := strings.Split(context.String("address"), ",")
