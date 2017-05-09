@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/mikehamer/crazyserver/crazyradio"
+	"github.com/mikehamer/crazyserver/crtp"
+	"github.com/mikehamer/crazyserver/crtpdevice"
 )
 
 type CrazyflieStatus uint8
@@ -21,6 +23,7 @@ type Crazyflie struct {
 	firmwareAddress uint64
 	channel         uint8
 	firmwareChannel uint8
+	crtpDevice      crtpdevice.CrtpDevice
 	status          CrazyflieStatus
 	firstInit       sync.Once
 
@@ -30,7 +33,7 @@ type Crazyflie struct {
 	waitGroup     *sync.WaitGroup
 
 	// callbacks for packet reception
-	responseCallbacks map[crtpPort](*list.List)
+	responseCallbacks map[crtp.Port](*list.List)
 
 	// console printing
 	accumulatedConsolePrint string
@@ -45,7 +48,7 @@ type Crazyflie struct {
 	logMaxOps      uint8
 	logNameToIndex map[string]logItem
 	logIndexToName map[uint8]string
-	logBlocks      map[int]logBlock
+	logBlocks      map[uint8]logBlock
 
 	// parameters
 	paramCount       int
@@ -54,13 +57,14 @@ type Crazyflie struct {
 	paramIndexToName map[uint8]string
 }
 
-func Connect(address uint64, channel uint8) (*Crazyflie, error) {
+func Connect(crtpDevice crtpdevice.CrtpDevice, channel uint8, address uint64) (*Crazyflie, error) {
 	cf := new(Crazyflie)
+	cf.crtpDevice = crtpDevice
 
 	cf.firmwareAddress = address // we save explicitly the firmware address and channel since a restart to bootloader will overwrite the current radio settings
 	cf.firmwareChannel = channel
 
-	err := cf.connect(address, channel)
+	err := cf.connect(channel, address)
 	if err != nil {
 		return nil, err
 	}
@@ -68,7 +72,11 @@ func Connect(address uint64, channel uint8) (*Crazyflie, error) {
 	return cf, nil
 }
 
-func (cf *Crazyflie) connect(address uint64, channel uint8) error {
+// Crazyflie.connect handles connection to the crazyflie at a given address and channel
+// Note that we split this functionality from the Connect function, since we can then reboot to bootloader
+// (which has a different channel and address) without affecting or losing the firmware address, or having to
+// create a new crazyflie object
+func (cf *Crazyflie) connect(channel uint8, address uint64) error {
 	cf.address = address
 	cf.channel = channel
 	cf.status = StatusDisconnected
@@ -80,15 +88,12 @@ func (cf *Crazyflie) connect(address uint64, channel uint8) error {
 	cf.paramSystemInit()
 	cf.memSystemInit()
 
-	err := crazyradio.CrazyflieRegister(cf.channel, cf.address, cf.responseHandler)
-	if err != nil {
-		return err
-	}
+	cf.crtpDevice.ClientRegister(cf.channel, cf.address, cf.responseHandler)
 
-	err = cf.memReadContents()
-	if err != nil {
-		return err
-	}
+	//err = cf.memReadContents()
+	//if err != nil {
+	//	return err
+	//}
 
 	return nil
 }
@@ -107,13 +112,13 @@ func (cf *Crazyflie) Status() CrazyflieStatus {
 
 func (cf *Crazyflie) DisconnectImmediately() {
 	// asynchronously (& non-blocking) stops the communications thread
-	crazyradio.CrazyflieRemove(cf.channel, cf.address)
+	cf.crtpDevice.ClientRemove(cf.channel, cf.address)
 	close(cf.disconnect)
 	cf.status = StatusDisconnected
 }
 
 func (cf *Crazyflie) DisconnectOnEmpty() {
 	// asynchronously (& non-blocking) stops the communications thread
-	cf.PacketQueueWaitForEmpty()
+	cf.WaitUntilAllPacketsHaveBeenSent()
 	cf.DisconnectImmediately()
 }

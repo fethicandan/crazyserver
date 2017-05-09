@@ -6,10 +6,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mikehamer/crazyserver/crazyradio"
+	"github.com/mikehamer/crazyserver/crtp"
 )
 
-const statusTimeoutDuration time.Duration = 1 * time.Second
+const statusTimeoutDuration time.Duration = 0.5 * time.Second
 
 func (cf *Crazyflie) communicationSystemInit() {
 	cf.disconnect = make(chan bool)
@@ -17,18 +17,18 @@ func (cf *Crazyflie) communicationSystemInit() {
 	cf.statusTimeout = time.NewTimer(statusTimeoutDuration)
 
 	// setup the communication callbacks
-	cf.responseCallbacks = map[crtpPort](*list.List){
-		crtpPortConsole:  list.New(),
-		crtpPortParam:    list.New(),
-		crtpPortSetpoint: list.New(),
-		crtpPortMem:      list.New(),
-		crtpPortLog:      list.New(),
-		crtpPortPosition: list.New(),
-		crtpPortPlatform: list.New(),
-		crtpPortLink:     list.New(),
-		crtpPortEmpty1:   list.New(),
-		crtpPortEmpty2:   list.New(),
-		crtpPortGreedy:   list.New(),
+	cf.responseCallbacks = map[crtp.Port](*list.List){
+		crtp.PortConsole:  list.New(),
+		crtp.PortParam:    list.New(),
+		crtp.PortSetpoint: list.New(),
+		crtp.PortMem:      list.New(),
+		crtp.PortLog:      list.New(),
+		crtp.PortPosition: list.New(),
+		crtp.PortPlatform: list.New(),
+		crtp.PortLink:     list.New(),
+		crtp.PortEmpty1:   list.New(),
+		crtp.PortEmpty2:   list.New(),
+		crtp.PortGreedy:   list.New(),
 	}
 
 	cf.waitGroup.Add(1)
@@ -44,68 +44,60 @@ func (cf *Crazyflie) statusTimeoutThread() {
 			return
 		case <-cf.statusTimeout.C:
 			cf.status = StatusNoResponse
-			cf.statusTimeout.Reset(time.Second)
+			cf.statusTimeout.Reset(statusTimeoutDuration)
 		}
 	}
 }
 
-func (cf *Crazyflie) PacketSend(packet []byte) {
-	crazyradio.PacketSend(cf.channel, cf.address, packet)
+func (cf *Crazyflie) PacketSend(packet crtp.RequestPacketPtr) error {
+	return cf.crtpDevice.PacketSend(cf.channel, cf.address, packet)
 }
 
-func (cf *Crazyflie) PacketSendPriority(packet []byte) {
-	crazyradio.PacketSendPriority(cf.channel, cf.address, packet)
+func (cf *Crazyflie) PacketSendPriority(packet crtp.RequestPacketPtr) error {
+	return cf.crtpDevice.PacketSendPriority(cf.channel, cf.address, packet)
 }
 
-func (cf *Crazyflie) packetCustomSendAwaitResponseOnChannelPort(packet []byte, awaitPort byte, awaitChannel byte, timeout time.Duration, sendFunction func([]byte)) ([]byte, error) {
-	// the function which matches and acts on the response packet
-	callbackTriggered := make(chan []byte)
+func (cf *Crazyflie) PacketSendAndAwaitResponse(requestPacket crtp.RequestPacketPtr, responsePacket crtp.ResponsePacketPtr, timeout time.Duration) error {
+	return cf.packetCustomSendAndAwaitResponse(cf.PacketSend, requestPacket, responsePacket, timeout)
+}
+
+func (cf *Crazyflie) PacketSendPriorityAndAwaitResponse(requestPacket crtp.RequestPacketPtr, responsePacket crtp.ResponsePacketPtr, timeout time.Duration) error {
+	return cf.packetCustomSendAndAwaitResponse(cf.PacketSendPriority, requestPacket, responsePacket, timeout)
+}
+
+func (cf *Crazyflie) packetCustomSendAndAwaitResponse(sendFunction func(packet crtp.RequestPacketPtr) error, requestPacket crtp.RequestPacketPtr, responsePacket crtp.ResponsePacketPtr, timeout time.Duration) error {
+	callbackError := make(chan error)
 	callback := func(resp []byte) {
-		header := crtpHeader(resp[0])
-
-		// should check the header port and channel like this (rather than check the hex value of resp[0]) since the link bits might vary(?)
-		if header.port() == crtpPort(awaitPort) && header.channel() == awaitChannel {
-			callbackTriggered <- resp[1:]
+		err := responsePacket.LoadFromBytes(resp)
+		if err == crtp.ErrorPacketIncorrectType {
+			// if the packet is not the correct one, silently fail and keep waiting
+			return
 		}
+		callbackError <- err // otherwise propagate the error up
 	}
 
 	// add the callback to the list
-	e := cf.responseCallbacks[crtpPort(awaitPort)].PushBack(callback)
-	defer cf.responseCallbacks[crtpPort(awaitPort)].Remove(e) // and remove it once we're done
+	// note that this callback will be called for every CRTP packet on this port
+	e := cf.responseCallbacks[responsePacket.Port()].PushBack(callback)
+	// and remove it once we're done
+	defer cf.responseCallbacks[responsePacket.Port()].Remove(e)
 
-	sendFunction(packet) // schedule transmission of the packet
+	// schedule transmission of the packet
+	if err := sendFunction(requestPacket); err != nil {
+		return err
+	}
 
 	select {
-	case data := <-callbackTriggered:
-		return data, nil
+	case err := <-callbackError:
+		return err
 	case <-time.After(timeout):
-		return nil, ErrorNoResponse
+		return ErrorNoResponse
 	}
 }
 
-func (cf *Crazyflie) PacketSendAwaitResponseOnChannelPort(packet []byte, awaitPort byte, awaitChannel byte, timeout time.Duration) ([]byte, error) {
-	return cf.packetCustomSendAwaitResponseOnChannelPort(packet, awaitPort, awaitChannel, timeout, cf.PacketSend)
-}
-
-func (cf *Crazyflie) PacketSendPriorityAwaitResponseOnChannelPort(packet []byte, awaitPort byte, awaitChannel byte, timeout time.Duration) ([]byte, error) {
-	return cf.packetCustomSendAwaitResponseOnChannelPort(packet, awaitPort, awaitChannel, timeout, cf.PacketSendPriority)
-}
-
-func (cf *Crazyflie) PacketSendAwaitResponse(packet []byte, timeout time.Duration) ([]byte, error) {
-	awaitPort := byte(crtpHeader(packet[0]).port())
-	awaitChannel := crtpHeader(packet[0]).channel()
-	return cf.PacketSendAwaitResponseOnChannelPort(packet, awaitPort, awaitChannel, timeout)
-}
-
-func (cf *Crazyflie) PacketSendPriorityAwaitResponse(packet []byte, timeout time.Duration) ([]byte, error) {
-	awaitPort := byte(crtpHeader(packet[0]).port())
-	awaitChannel := crtpHeader(packet[0]).channel()
-	return cf.PacketSendPriorityAwaitResponseOnChannelPort(packet, awaitPort, awaitChannel, timeout)
-}
-
 // Waits for the packet queues to be empty
-func (cf *Crazyflie) PacketQueueWaitForEmpty() {
-	crazyradio.PacketQueueWaitForEmpty(cf.channel, cf.address)
+func (cf *Crazyflie) WaitUntilAllPacketsHaveBeenSent() {
+	cf.crtpDevice.ClientWaitUntilAllPacketsHaveBeenSent(cf.channel, cf.address)
 }
 
 func (cf *Crazyflie) responseHandler(resp []byte) {
@@ -113,19 +105,19 @@ func (cf *Crazyflie) responseHandler(resp []byte) {
 	cf.statusTimeout.Reset(statusTimeoutDuration)
 
 	if len(resp) > 0 {
-		header := crtpHeader(resp[0])
+		header := crtp.Header(resp[0])
 
-		if header.port() == 0xF3 || header.port() == 0xF7 {
-			return // CF has nothing to report, indicate we can transmit at a lower frequency
+		if header.Port() == crtp.PortEmpty1 || header.Port() == crtp.PortEmpty2 {
+			return // CF has nothing to report
 		}
 
 		// call any registered callbacks for this port
-		for e := cf.responseCallbacks[header.port()].Front(); e != nil; e = e.Next() {
+		for e := cf.responseCallbacks[header.Port()].Front(); e != nil; e = e.Next() {
 			f := e.Value.(func(r []byte))
 			go f(resp) // TODO: send them copies? otherwise they can modify underlying data?
 		}
 
-		for e := cf.responseCallbacks[crtpPortGreedy].Front(); e != nil; e = e.Next() {
+		for e := cf.responseCallbacks[crtp.PortGreedy].Front(); e != nil; e = e.Next() {
 			f := e.Value.(func(r []byte))
 			go f(resp)
 		}

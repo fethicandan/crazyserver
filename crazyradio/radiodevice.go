@@ -39,7 +39,7 @@ func OpenRadio(dev *usb.Device) (*RadioDevice, error) {
 	dev.ReadTimeout = 50 * time.Millisecond
 	dev.WriteTimeout = 50 * time.Millisecond
 
-	// now have a usb device and context pointing to the CrazyRadio!
+	// now have a usb device and context pointing to the Radio!
 	radio := new(RadioDevice)
 	radio.lock = new(sync.Mutex)
 	radio.device = dev
