@@ -97,7 +97,6 @@ func (cf *Crazyflie) logTOCGetInfo() (int, uint32, error) {
 	cf.logMaxOps = response.MaxOps
 
 	return cf.logCount, cf.logCRC, nil
-
 }
 
 func (cf *Crazyflie) LogTOCGetList() error {
