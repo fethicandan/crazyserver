@@ -18,7 +18,7 @@ func (p *ParamRequestGetInfo) Channel() crtp.Channel {
 }
 
 func (p *ParamRequestGetInfo) Bytes() []byte {
-	return []byte{crtp.HeaderBytes(p.Port(), p.Channel()), 0x01}
+	return []byte{0x01}
 }
 
 // ---- PARAM RESPONSE: GET INFO ----
@@ -58,7 +58,7 @@ func (p *ParamRequestReadMeta) Channel() crtp.Channel {
 }
 
 func (p *ParamRequestReadMeta) Bytes() []byte {
-	return []byte{crtp.HeaderBytes(p.Port(), p.Channel()), 0x00, p.ID}
+	return []byte{0x00, p.ID}
 }
 
 // ---- PARAM RESPONSE: GET ITEM ----
@@ -108,7 +108,7 @@ func (p *ParamRequestReadValue) Channel() crtp.Channel {
 }
 
 func (p *ParamRequestReadValue) Bytes() []byte {
-	return []byte{crtp.HeaderBytes(p.Port(), p.Channel()), p.ID}
+	return []byte{p.ID}
 }
 
 // ---- PARAM RESPONSE: READ VALUE ----
@@ -149,7 +149,7 @@ func (p *ParamRequestWriteValue) Channel() crtp.Channel {
 }
 
 func (p *ParamRequestWriteValue) Bytes() []byte {
-	return append([]byte{crtp.HeaderBytes(p.Port(), p.Channel()), p.ID}, p.Data...)
+	return append([]byte{p.ID}, p.Data...)
 }
 
 // ---- PARAM RESPONSE: WRITE VALUE ----

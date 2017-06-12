@@ -29,9 +29,9 @@ func (cr *Radio) ClientWaitUntilAllPacketsHaveBeenSent(channel uint8, address ui
 }
 
 func (cr *Radio) PacketSend(channel uint8, address uint64, request crtp.RequestPacketPtr) error {
-	return cr.clientPacketSend(channel, address, request.Bytes())
+	return clientPacketEnqueue(cr.clientPacketQueueGet(channel, address).standardQueue, request)
 }
 
 func (cr *Radio) PacketSendPriority(channel uint8, address uint64, request crtp.RequestPacketPtr) error {
-	return cr.clientPacketSendPriority(channel, address, request.Bytes())
+	return clientPacketEnqueue(cr.clientPacketQueueGet(channel, address).priorityQueue, request)
 }

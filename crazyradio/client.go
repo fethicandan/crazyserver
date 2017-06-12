@@ -1,6 +1,9 @@
 package crazyradio
 
-import "github.com/Workiva/go-datastructures/queue"
+import (
+	"github.com/Workiva/go-datastructures/queue"
+	"github.com/mikehamer/crazyserver/crtp"
+)
 
 func (cr *Radio) clientCallbackSet(channel uint8, address uint64, callback func([]byte)) {
 	if _, ok := cr.callbacks[channel]; !ok {
@@ -37,20 +40,12 @@ func (cr *Radio) clientPacketQueueRemove(channel uint8, address uint64) {
 	}
 }
 
-func (cr *Radio) clientPacketSend(channel uint8, address uint64, packet []byte) error {
-	queue := cr.clientPacketQueueGet(channel, address)
+func clientPacketEnqueue(queue *queue.Queue, request crtp.RequestPacketPtr) error {
 
-	packetCopy := make([]byte, len(packet))
-	copy(packetCopy, packet)
+	requestBody := request.Bytes()
+	requestData := make([]byte, len(requestBody)+1)
+	requestData[0] = crtp.HeaderBytes(request.Port(), request.Channel())
+	copy(requestData[1:], requestBody)
 
-	return queue.standardQueue.Put(packetCopy)
-}
-
-func (cr *Radio) clientPacketSendPriority(channel uint8, address uint64, packet []byte) error {
-	queue := cr.clientPacketQueueGet(channel, address)
-
-	packetCopy := make([]byte, len(packet))
-	copy(packetCopy, packet)
-
-	return queue.priorityQueue.Put(packetCopy)
+	return queue.Put(requestData)
 }

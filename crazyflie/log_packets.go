@@ -18,7 +18,7 @@ func (p *LogRequestGetInfo) Channel() crtp.Channel {
 }
 
 func (p *LogRequestGetInfo) Bytes() []byte {
-	return []byte{crtp.HeaderBytes(p.Port(), p.Channel()), 0x01}
+	return []byte{0x01}
 }
 
 // ---- LOG RESPONSE: GET INFO ----
@@ -62,7 +62,7 @@ func (p *LogRequestGetItem) Channel() crtp.Channel {
 }
 
 func (p *LogRequestGetItem) Bytes() []byte {
-	return []byte{crtp.HeaderBytes(p.Port(), p.Channel()), 0x00, p.ID}
+	return []byte{0x00, p.ID}
 }
 
 // ---- LOG RESPONSE: GET ITEM ----
@@ -107,7 +107,7 @@ func (p *LogRequestBlockClearAll) Channel() crtp.Channel {
 }
 
 func (p *LogRequestBlockClearAll) Bytes() []byte {
-	return []byte{crtp.HeaderBytes(p.Port(), p.Channel()), 0x05}
+	return []byte{0x05}
 }
 
 // ---- LOG RESPONSE: BLOCK CLEAR ALL ----
@@ -145,13 +145,12 @@ func (p *LogRequestBlockAdd) Channel() crtp.Channel {
 }
 
 func (p *LogRequestBlockAdd) Bytes() []byte {
-	packet := make([]byte, 2*len(p.VariableIDs)+3)
-	packet[0] = crtp.HeaderBytes(p.Port(), p.Channel())
-	packet[1] = 0x00             // control create block
-	packet[2] = uint8(p.BlockID) // logblock id
+	packet := make([]byte, 2*len(p.VariableIDs)+2)
+	packet[0] = 0x00             // control create block
+	packet[1] = uint8(p.BlockID) // logblock id
 	for i := 0; i < len(p.VariableIDs); i++ {
-		packet[3+2*i] = p.VariableDatatypes[i]
-		packet[3+2*i+1] = p.VariableIDs[i]
+		packet[2+2*i] = p.VariableDatatypes[i]
+		packet[2+2*i+1] = p.VariableIDs[i]
 	}
 	return packet
 }
@@ -204,7 +203,7 @@ func (p *LogRequestBlockDelete) Channel() crtp.Channel {
 }
 
 func (p *LogRequestBlockDelete) Bytes() []byte {
-	return []byte{crtp.HeaderBytes(p.Port(), p.Channel()), 0x02, p.BlockID}
+	return []byte{0x02, p.BlockID}
 }
 
 // ---- LOG RESPONSE: BLOCK DELETE ----
@@ -256,7 +255,7 @@ func (p *LogRequestBlockStart) Channel() crtp.Channel {
 }
 
 func (p *LogRequestBlockStart) Bytes() []byte {
-	return []byte{crtp.HeaderBytes(p.Port(), p.Channel()), 0x03, p.BlockID, p.Period}
+	return []byte{0x03, p.BlockID, p.Period}
 }
 
 // ---- LOG RESPONSE: BLOCK START ----
@@ -307,7 +306,7 @@ func (p *LogRequestBlockStop) Channel() crtp.Channel {
 }
 
 func (p *LogRequestBlockStop) Bytes() []byte {
-	return []byte{crtp.HeaderBytes(p.Port(), p.Channel()), 0x04, p.BlockID}
+	return []byte{0x04, p.BlockID}
 }
 
 // ---- LOG RESPONSE: BLOCK Stop ----
