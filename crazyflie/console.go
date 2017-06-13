@@ -1,12 +1,13 @@
 package crazyflie
 
 import (
-	"strings"
+	"github.com/mikehamer/crazyserver/crtp"
 	"log"
+	"strings"
 )
 
 func (cf *Crazyflie) consoleSystemInit() {
-	cf.responseCallbacks[crtpPortConsole].PushBack(cf.handleConsoleResponse)
+	cf.responseCallbacks[crtp.PortConsole].PushBack(cf.handleConsoleResponse)
 }
 
 func (cf *Crazyflie) handleConsoleResponse(resp []byte) {
