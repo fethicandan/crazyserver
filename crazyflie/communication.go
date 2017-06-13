@@ -65,22 +65,37 @@ func (cf *Crazyflie) PacketSendPriorityAndAwaitResponse(requestPacket crtp.Reque
 	return cf.packetCustomSendAndAwaitResponse(cf.PacketSendPriority, requestPacket, responsePacket, timeout)
 }
 
-func (cf *Crazyflie) packetCustomSendAndAwaitResponse(sendFunction func(packet crtp.RequestPacketPtr) error, requestPacket crtp.RequestPacketPtr, responsePacket crtp.ResponsePacketPtr, timeout time.Duration) error {
+func (cf *Crazyflie) PacketStartAwaiting(responsePacket crtp.ResponsePacketPtr) (chan error, func()) {
 	callbackError := make(chan error)
 	callback := func(resp []byte) {
-		err := responsePacket.LoadFromBytes(resp)
-		if err == crtp.ErrorPacketIncorrectType {
-			// if the packet is not the correct one, silently fail and keep waiting
-			return
+		header := crtp.Header(resp[0])
+
+		if responsePacket.Port() == crtp.PortGreedy || (responsePacket.Port() == header.Port() && responsePacket.Channel() == header.Channel()) {
+			err := responsePacket.LoadFromBytes(resp)
+			if err == crtp.ErrorPacketIncorrectType {
+				// if the packet is not the correct one, silently fail and keep waiting
+				return
+			}
+			callbackError <- err // otherwise propagate the error up
 		}
-		callbackError <- err // otherwise propagate the error up
+		// if the packet has wrong port or channel, silently fail and keep waiting
+		return
 	}
 
 	// add the callback to the list
 	// note that this callback will be called for every CRTP packet on this port
 	e := cf.responseCallbacks[responsePacket.Port()].PushBack(callback)
 	// and remove it once we're done
-	defer cf.responseCallbacks[responsePacket.Port()].Remove(e)
+
+	stopAwaiting := func() { cf.responseCallbacks[responsePacket.Port()].Remove(e) }
+
+	return callbackError, stopAwaiting
+}
+
+func (cf *Crazyflie) packetCustomSendAndAwaitResponse(sendFunction func(packet crtp.RequestPacketPtr) error, requestPacket crtp.RequestPacketPtr, responsePacket crtp.ResponsePacketPtr, timeout time.Duration) error {
+
+	awaitErrorChannel, stopAwaiting := cf.PacketStartAwaiting(responsePacket)
+	defer stopAwaiting()
 
 	// schedule transmission of the packet
 	if err := sendFunction(requestPacket); err != nil {
@@ -88,7 +103,7 @@ func (cf *Crazyflie) packetCustomSendAndAwaitResponse(sendFunction func(packet c
 	}
 
 	select {
-	case err := <-callbackError:
+	case err := <-awaitErrorChannel:
 		return err
 	case <-time.After(timeout):
 		return ErrorNoResponse
@@ -107,7 +122,7 @@ func (cf *Crazyflie) responseHandler(resp []byte) {
 	if len(resp) > 0 {
 		header := crtp.Header(resp[0])
 
-		if header.Port() == crtp.PortEmpty1 || header.Port() == crtp.PortEmpty2 {
+		if resp[0] == crtp.PortEmpty1 || resp[0] == crtp.PortEmpty2 {
 			return // CF has nothing to report
 		}
 
