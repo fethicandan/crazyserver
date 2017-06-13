@@ -119,6 +119,6 @@ func (cf *Crazyflie) DisconnectImmediately() {
 
 func (cf *Crazyflie) DisconnectOnEmpty() {
 	// asynchronously (& non-blocking) stops the communications thread
-	cf.WaitUntilAllPacketsHaveBeenSent()
+	cf.PacketQueueWaitForEmpty()
 	cf.DisconnectImmediately()
 }

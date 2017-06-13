@@ -111,7 +111,7 @@ func (cf *Crazyflie) packetCustomSendAndAwaitResponse(sendFunction func(packet c
 }
 
 // Waits for the packet queues to be empty
-func (cf *Crazyflie) WaitUntilAllPacketsHaveBeenSent() {
+func (cf *Crazyflie) PacketQueueWaitForEmpty() {
 	cf.crtpDevice.ClientWaitUntilAllPacketsHaveBeenSent(cf.channel, cf.address)
 }
 
