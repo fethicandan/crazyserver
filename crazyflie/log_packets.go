@@ -37,7 +37,7 @@ func (p *LogResponseGetInfo) Channel() crtp.Channel {
 	return 0
 }
 
-func (p *LogResponseGetInfo) LoadFromBytes(b []byte) error {
+func (p *LogResponseGetInfo) LoadFromBytes(b []byte) error { // b[0] is the CRTP Header, but packets are only passed to this function if this header matches the packet's Port() and Channel()
 	if b[1] != 0x01 { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}
@@ -80,7 +80,7 @@ func (p *LogResponseGetItem) Channel() crtp.Channel {
 	return 0
 }
 
-func (p *LogResponseGetItem) LoadFromBytes(b []byte) error {
+func (p *LogResponseGetItem) LoadFromBytes(b []byte) error { // b[0] is the CRTP Header, but packets are only passed to this function if this header matches the packet's Port() and Channel()
 	if b[1] != 0x00 || b[2] != p.ID { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}
@@ -121,7 +121,7 @@ func (p *LogResponseBlockClearAll) Channel() crtp.Channel {
 	return 1
 }
 
-func (p *LogResponseBlockClearAll) LoadFromBytes(b []byte) error {
+func (p *LogResponseBlockClearAll) LoadFromBytes(b []byte) error { // b[0] is the CRTP Header, but packets are only passed to this function if this header matches the packet's Port() and Channel()
 	if b[1] != 0x05 { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}
@@ -168,7 +168,7 @@ func (p *LogResponseBlockAdd) Channel() crtp.Channel {
 	return 1
 }
 
-func (p *LogResponseBlockAdd) LoadFromBytes(b []byte) error {
+func (p *LogResponseBlockAdd) LoadFromBytes(b []byte) error { // b[0] is the CRTP Header, but packets are only passed to this function if this header matches the packet's Port() and Channel()
 	if b[1] != 0x00 || b[2] != p.BlockID { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}
@@ -219,7 +219,7 @@ func (p *LogResponseBlockDelete) Channel() crtp.Channel {
 	return 1
 }
 
-func (p *LogResponseBlockDelete) LoadFromBytes(b []byte) error {
+func (p *LogResponseBlockDelete) LoadFromBytes(b []byte) error { // b[0] is the CRTP Header, but packets are only passed to this function if this header matches the packet's Port() and Channel()
 	if b[1] != 0x02 || b[2] != p.BlockID { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}
@@ -271,7 +271,7 @@ func (p *LogResponseBlockStart) Channel() crtp.Channel {
 	return 1
 }
 
-func (p *LogResponseBlockStart) LoadFromBytes(b []byte) error {
+func (p *LogResponseBlockStart) LoadFromBytes(b []byte) error { // b[0] is the CRTP Header, but packets are only passed to this function if this header matches the packet's Port() and Channel()
 	if b[1] != 0x03 || b[2] != p.BlockID { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}
@@ -322,7 +322,7 @@ func (p *LogResponseBlockStop) Channel() crtp.Channel {
 	return 1
 }
 
-func (p *LogResponseBlockStop) LoadFromBytes(b []byte) error {
+func (p *LogResponseBlockStop) LoadFromBytes(b []byte) error { // b[0] is the CRTP Header, but packets are only passed to this function if this header matches the packet's Port() and Channel()
 	if b[1] != 0x04 || b[2] != p.BlockID { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}

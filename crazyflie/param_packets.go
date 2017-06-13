@@ -35,7 +35,7 @@ func (p *ParamResponseGetInfo) Channel() crtp.Channel {
 	return 0
 }
 
-func (p *ParamResponseGetInfo) LoadFromBytes(b []byte) error {
+func (p *ParamResponseGetInfo) LoadFromBytes(b []byte) error { // b[0] is the CRTP Header, but packets are only passed to this function if this header matches the packet's Port() and Channel()
 	if b[1] != 0x01 { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}
@@ -77,7 +77,7 @@ func (p *ParamResponseReadMeta) Channel() crtp.Channel {
 	return 0
 }
 
-func (p *ParamResponseReadMeta) LoadFromBytes(b []byte) error {
+func (p *ParamResponseReadMeta) LoadFromBytes(b []byte) error { // b[0] is the CRTP Header, but packets are only passed to this function if this header matches the packet's Port() and Channel()
 	if b[1] != 0x00 || b[2] != p.ID { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}
@@ -125,7 +125,7 @@ func (p *ParamResponseReadValue) Channel() crtp.Channel {
 	return 1
 }
 
-func (p *ParamResponseReadValue) LoadFromBytes(b []byte) error {
+func (p *ParamResponseReadValue) LoadFromBytes(b []byte) error { // b[0] is the CRTP Header, but packets are only passed to this function if this header matches the packet's Port() and Channel()
 	if b[1] != p.ID { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}
@@ -165,7 +165,7 @@ func (p *ParamResponseWriteValue) Channel() crtp.Channel {
 	return 2
 }
 
-func (p *ParamResponseWriteValue) LoadFromBytes(b []byte) error {
+func (p *ParamResponseWriteValue) LoadFromBytes(b []byte) error { // b[0] is the CRTP Header, but packets are only passed to this function if this header matches the packet's Port() and Channel()
 	if b[1] != p.ID { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}

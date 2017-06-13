@@ -9,9 +9,9 @@ const (
 	PortPosition      = 0x06
 	PortPlatform      = 0x0D
 	PortLink          = 0x0F
-	PortEmpty1        = 0xF3
-	PortEmpty2        = 0xF7
-	PortGreedy        = 0xFF
+	PortEmpty1        = 0xF3 // This is not an actual CRTP ports (since ports are 4 bit). This indicates an empty queue on the CF.
+	PortEmpty2        = 0xF7 // This is not an actual CRTP ports (since ports are 4 bit). This indicates an empty queue on the CF.
+	PortGreedy        = 0xFF // This is not an actual CRTP ports (since ports are 4 bit). Anything that listens on this port will receive every response.
 )
 
 type Header byte
