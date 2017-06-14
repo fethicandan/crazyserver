@@ -29,7 +29,7 @@ func commanderSet(w http.ResponseWriter, r *http.Request, cf *crazyflie.Crazyfli
 		return
 	}
 
-	cf.SetpointSend(req.Roll, req.Pitch, req.Yawrate, req.Thrust)
+	cf.LegacySetpointSend(req.Roll, req.Pitch, req.Yawrate, req.Thrust)
 
 	w.Header().Set("Content-type", "application/json; charset=UTF-8")
 	w.WriteHeader(http.StatusOK)
