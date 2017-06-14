@@ -99,30 +99,14 @@ func (cf *Crazyflie) memRead(offset uint32, length uint8) ([]byte, error) {
 		return nil, ErrorMemLengthTooLarge
 	}
 
-	packet := make([]byte, 1+1+4+1)
-	packet[0] = crtp(crtpPortMem, 1)
-	packet[1] = memIdEEPROM
-	copy(packet[2:6], uint32ToBytes(offset))
-	packet[6] = length
+	request := &MemRequestRead{Target: memIdEEPROM, Offset: offset, Length: length}
+	response := &MemResponseRead{Target: memIdEEPROM, Offset: offset, Length: length}
 
-	data, err := cf.PacketSendAwaitResponse(packet, 500*time.Millisecond)
-	if err != nil {
+	if err := cf.PacketSendAndAwaitResponse(request, response, 500*time.Millisecond); err != nil {
 		return nil, err
 	}
 
-	// assert(data[0] == packet[1])
-	// assert(bytesToUint32(data[1:5]) == offset)
-	// assert(len(data[6:]) == length)
-
-	if data[5] != 0 {
-		return nil, ErrorMemReadFailed
-	}
-
-	if len(data[6:]) != int(length) {
-		return nil, ErrorMemReadFailed
-	}
-
-	return data[6:], nil
+	return response.Data, nil
 }
 
 func (cf *Crazyflie) memWrite(offset uint32, data []byte) error {
@@ -130,26 +114,11 @@ func (cf *Crazyflie) memWrite(offset uint32, data []byte) error {
 		return ErrorMemLengthTooLarge
 	}
 
-	packet := make([]byte, 1+1+4+len(data))
-	packet[0] = crtp(crtpPortMem, 2)
-	packet[1] = memIdEEPROM
-	copy(packet[2:6], uint32ToBytes(offset))
-	copy(packet[6:], data)
+	request := &MemRequestWrite{Target: memIdEEPROM, Offset: offset, Data: data}
+	response := &MemResponseWrite{Target: memIdEEPROM, Offset: offset}
 
-	data, err := cf.PacketSendAwaitResponse(packet, 500*time.Millisecond)
-	if err != nil {
-		return err
-	}
+	return cf.PacketSendAndAwaitResponse(request, response, 500*time.Millisecond)
 
-	// assert(data[0] == packet[1])
-	// assert(bytesToUint32(data[1:5]) == offset)
-	// assert(len(data[6:]) == length)
-
-	if data[5] != 0 {
-		return ErrorMemWriteFailed
-	}
-
-	return nil
 }
 
 func memChecksum256(data []byte) uint8 {

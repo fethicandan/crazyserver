@@ -1,12 +1,9 @@
 package crazyflie
 
 import (
-	"debug/pe"
-	"encoding/binary"
-	"github.com/mikehamer/crazyserver/crtp"
-	"golang.org/x/tools/go/gcimporter15/testdata"
 	"reflect"
-	"strings"
+
+	"github.com/mikehamer/crazyserver/crtp"
 )
 
 // ---- FLASH REQUEST: GET INFO ----

@@ -1,10 +1,9 @@
 package crazyflie
 
 import (
-	"encoding/binary"
-	"github.com/mikehamer/crazyserver/crtp"
 	"log"
-	"strings"
+
+	"github.com/mikehamer/crazyserver/crtp"
 )
 
 // ---- BOOTLOADER REQUEST: GET INFO ----
