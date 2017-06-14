@@ -2,8 +2,9 @@ package crazyflie
 
 import (
 	"encoding/binary"
-	"github.com/mikehamer/crazyserver/crtp"
 	"strings"
+
+	"github.com/mikehamer/crazyserver/crtp"
 )
 
 // ---- LOG REQUEST: GET INFO ----

@@ -1,9 +1,10 @@
 package crazyflie
 
 import (
-	"github.com/mikehamer/crazyserver/crtp"
 	"log"
 	"strings"
+
+	"github.com/mikehamer/crazyserver/crtp"
 )
 
 func (cf *Crazyflie) consoleSystemInit() {

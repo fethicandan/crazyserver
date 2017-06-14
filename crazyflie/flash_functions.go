@@ -4,8 +4,6 @@ import (
 	"log"
 	"time"
 
-	"fmt"
-	"golang.org/x/tools/go/gcimporter15/testdata"
 	"reflect"
 )
 

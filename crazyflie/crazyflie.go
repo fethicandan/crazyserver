@@ -5,7 +5,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/mikehamer/crazyserver/crazyradio"
 	"github.com/mikehamer/crazyserver/crtp"
 	"github.com/mikehamer/crazyserver/crtpdevice"
 )

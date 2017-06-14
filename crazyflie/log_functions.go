@@ -3,7 +3,6 @@ package crazyflie
 import (
 	"log"
 	"math"
-	"strings"
 	"time"
 
 	"github.com/mikehamer/crazyserver/cache"

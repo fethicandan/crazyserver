@@ -1,10 +1,6 @@
 package crazyflie
 
-import (
-	"encoding/binary"
-	"github.com/mikehamer/crazyserver/crtp"
-	"strings"
-)
+import "github.com/mikehamer/crazyserver/crtp"
 
 // ---- CONTROL REQUEST: LEGACY SETPOINT ----
 type ControlRequestLegacySetpoint struct {

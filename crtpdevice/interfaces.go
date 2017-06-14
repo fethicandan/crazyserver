@@ -1,10 +1,6 @@
 package crtpdevice
 
-import (
-	"time"
-
-	"github.com/mikehamer/crazyserver/crtp"
-)
+import "github.com/mikehamer/crazyserver/crtp"
 
 type CrtpDevice interface {
 	ClientRegister(channel uint8, address uint64, responseCallback func([]byte))

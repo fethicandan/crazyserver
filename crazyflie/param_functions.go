@@ -1,7 +1,6 @@
 package crazyflie
 
 import (
-	"encoding/binary"
 	"log"
 	"strings"
 	"time"
