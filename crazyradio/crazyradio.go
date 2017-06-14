@@ -4,6 +4,8 @@ import (
 	"sync"
 	"time"
 
+	"fmt"
+
 	"github.com/Workiva/go-datastructures/queue"
 )
 
@@ -33,7 +35,7 @@ func Open() (*Radio, error) {
 		return singletonRadio, nil
 	}
 
-	radios, err := OpenAllRadios()
+	radios, err := openAllRadios()
 	if err != nil {
 		return nil, err
 	}
@@ -70,6 +72,8 @@ func (cr *Radio) Close() {
 	for _, r := range cr.radios {
 		r.Close()
 	}
+
+	singletonRadio = nil
 }
 
 func (cr *Radio) radioThread(radio *RadioDevice) {
@@ -80,6 +84,7 @@ func (cr *Radio) radioThread(radio *RadioDevice) {
 
 		select {
 		case <-cr.radioThreadShouldStop:
+			fmt.Println("Dying...")
 			return // here no need to workWaitGroup.Done() since we haven't received work
 		case channel = <-cr.radioWorkQueue:
 		}
@@ -96,24 +101,21 @@ func (cr *Radio) radioThread(radio *RadioDevice) {
 			var currentQueue *queue.Queue = nil
 			var packet []byte = defaultPacket
 
-			if !addressQueue.priorityQueue.Empty() {
+			if frontPacket, err := addressQueue.priorityQueue.Peek(); err == nil {
 				currentQueue = addressQueue.priorityQueue
-				frontPacket, err := currentQueue.Peek()
-				if err != nil {
-					packet = frontPacket.([]byte)
-				}
-			} else if !addressQueue.standardQueue.Empty() {
+				packet = frontPacket.([]byte)
+				fmt.Printf("Priority %d:0x%X — %v\n", channel, address, packet)
+			} else if frontPacket, err := addressQueue.standardQueue.Peek(); err == nil {
 				currentQueue = addressQueue.standardQueue
-				frontPacket, err := currentQueue.Peek()
-				if err != nil {
-					packet = frontPacket.([]byte)
-				}
+				packet = frontPacket.([]byte)
+				fmt.Printf("Standard %d:0x%X — %v\n", channel, address, packet)
 			}
 
 			radio.SetChannel(channel)
 			radio.SetAddress(address)
 			err := radio.SendPacket(packet)
 			if err != nil {
+				fmt.Printf("Error sending packet: %v\n", err)
 				continue
 			}
 

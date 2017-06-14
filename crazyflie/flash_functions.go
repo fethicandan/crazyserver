@@ -73,7 +73,7 @@ func (cf *Crazyflie) flashGetInfo(target TargetCPU) (*flashObj, error) {
 	request := &FlashRequestGetInfo{Target: flash.Target}
 	response := &FlashResponseGetInfo{Target: flash.Target}
 
-	if err := cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond); err != nil {
+	if err := cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT); err != nil {
 		return nil, err
 	}
 

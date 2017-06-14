@@ -85,7 +85,7 @@ func (cf *Crazyflie) logTOCGetInfo() (int, uint32, error) {
 	request := &LogRequestGetInfo{}
 	response := &LogResponseGetInfo{}
 
-	if err := cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond); err != nil {
+	if err := cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT); err != nil {
 		return 0, 0, err
 	}
 
@@ -118,16 +118,21 @@ func (cf *Crazyflie) LogTOCGetList() error {
 		request := &LogRequestGetItem{uint8(i)}
 		response := &LogResponseGetItem{ID: uint8(i)}
 
+		var err error
 		for attempts := 0; attempts < 5; attempts++ {
-			if err := cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond); err != nil {
-				return err
+			err = cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT)
+			if err == nil {
+				break
 			}
+		}
+		if err != nil {
+			return err
 		}
 
 		cf.logNameToIndex[response.Name] = logItem{response.ID, response.Datatype}
 		cf.logIndexToName[response.ID] = response.Name
 
-		log.Printf("%d -> %s (%d)", response.ID, response.Name, response.Datatype)
+		//log.Printf("%d/%d -> %s (%d)", response.ID, cf.logCount, response.Name, response.Datatype)
 	}
 
 	log.Printf("Loaded Log TOC Size %d with CRC %X", cf.logCount, cf.logCRC)
@@ -144,7 +149,7 @@ func (cf *Crazyflie) LogBlockClearAll() error {
 	request := &LogRequestBlockClearAll{}
 	response := &LogResponseBlockClearAll{}
 
-	return cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond)
+	return cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT)
 }
 
 func (cf *Crazyflie) LogBlockAdd(variables []string) (int, error) {
@@ -190,7 +195,7 @@ func (cf *Crazyflie) LogBlockAdd(variables []string) (int, error) {
 	}
 	response := &LogResponseBlockAdd{block.ID}
 
-	if err := cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond); err != nil {
+	if err := cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT); err != nil {
 		return -1, err
 	}
 
@@ -213,14 +218,14 @@ func (cf *Crazyflie) LogBlockStart(blockid uint8, period time.Duration) error {
 
 	request := &LogRequestBlockStart{blockid, quantizedPeriod}
 	response := &LogResponseBlockStart{blockid}
-	return cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond)
+	return cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT)
 }
 
 func (cf *Crazyflie) LogBlockDelete(blockid uint8) error {
 	request := &LogRequestBlockDelete{blockid}
 	response := &LogResponseBlockDelete{blockid}
 
-	err := cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond)
+	err := cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT)
 	delete(cf.logBlocks, blockid) // a noop if it doesn't exist
 	return err
 }
@@ -233,6 +238,6 @@ func (cf *Crazyflie) LogBlockStop(blockid uint8) error {
 
 	request := &LogRequestBlockStop{blockid}
 	response := &LogResponseBlockStop{blockid}
-	return cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond)
+	return cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT)
 
 }

@@ -3,7 +3,6 @@ package crazyflie
 import (
 	"log"
 	"strings"
-	"time"
 
 	"github.com/mikehamer/crazyserver/cache"
 )
@@ -78,7 +77,7 @@ func (cf *Crazyflie) paramTOCGetInfo() (int, uint32, error) {
 	request := &ParamRequestGetInfo{}
 	response := &ParamResponseGetInfo{}
 
-	if err := cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond); err != nil {
+	if err := cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT); err != nil {
 		return 0, 0, err
 	}
 
@@ -110,7 +109,7 @@ func (cf *Crazyflie) ParamTOCGetList() error {
 		response := &ParamResponseReadMeta{ID: uint8(i)}
 
 		for attempts := 0; attempts < 5; attempts++ {
-			if err := cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond); err != nil {
+			if err := cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT); err != nil {
 				return err
 			}
 		}
@@ -166,7 +165,7 @@ func (cf *Crazyflie) ParamRead(name string) (interface{}, error) {
 	request := &ParamRequestReadValue{ID: param.ID}
 	response := &ParamResponseReadValue{ID: param.ID}
 
-	if err := cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond); err != nil {
+	if err := cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT); err != nil {
 		return nil, err
 	}
 
@@ -210,5 +209,5 @@ func (cf *Crazyflie) ParamWrite(name string, val interface{}) error {
 	request := &ParamRequestWriteValue{param.ID, paramTypeToBytes[param.Datatype](val)}
 	response := &ParamResponseWriteValue{param.ID}
 
-	return cf.PacketSendAndAwaitResponse(request, response, 100*time.Millisecond)
+	return cf.PacketSendAndAwaitResponse(request, response, DEFAULT_RESPONSE_TIMEOUT)
 }

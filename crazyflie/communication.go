@@ -9,7 +9,7 @@ import (
 	"github.com/mikehamer/crazyserver/crtp"
 )
 
-const statusTimeoutDuration time.Duration = 0.5 * time.Second
+const statusTimeoutDuration time.Duration = 500 * time.Millisecond
 
 func (cf *Crazyflie) communicationSystemInit() {
 	cf.disconnect = make(chan bool)
@@ -122,9 +122,10 @@ func (cf *Crazyflie) responseHandler(resp []byte) {
 	if len(resp) > 0 {
 		header := crtp.Header(resp[0])
 
-		if resp[0] == crtp.PortEmpty1 || resp[0] == crtp.PortEmpty2 {
-			return // CF has nothing to report
-		}
+		//
+		//if resp[0] == crtp.PortEmpty1 || resp[0] == crtp.PortEmpty2 {
+		//	return // CF has nothing to report
+		//}
 
 		// call any registered callbacks for this port
 		for e := cf.responseCallbacks[header.Port()].Front(); e != nil; e = e.Next() {

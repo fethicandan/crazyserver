@@ -56,7 +56,7 @@ func OpenRadio(dev *usb.Device) (*RadioDevice, error) {
 	return radio, nil
 }
 
-func OpenAllRadios() ([]*RadioDevice, error) {
+func openAllRadios() ([]*RadioDevice, error) {
 	usbContext := usb.NewContext()
 	usbContext.Debug(0)
 

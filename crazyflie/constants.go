@@ -1,3 +1,5 @@
 package crazyflie
 
-const maxResponseWait_ms = 500
+import "time"
+
+const DEFAULT_RESPONSE_TIMEOUT = 500 * time.Millisecond

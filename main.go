@@ -8,8 +8,6 @@ import (
 	"sync"
 	"time"
 
-	pb "gopkg.in/cheggaaa/pb.v1"
-
 	"github.com/mikehamer/crazyserver/cache"
 	"github.com/mikehamer/crazyserver/crazyflie"
 	"github.com/mikehamer/crazyserver/crazyradio"
@@ -39,7 +37,7 @@ func main() {
 				},
 				cli.StringFlag{
 					Name:  "address",
-					Value: "E7E7E7E702",
+					Value: "E7E7E7E701",
 					Usage: "Set the radio address (default is address: E7E7E7E701)",
 				},
 			},
@@ -57,7 +55,7 @@ func main() {
 				},
 				cli.Uint64Flag{
 					Name:  "address",
-					Value: 0xE7E7E7E702,
+					Value: 0xE7E7E7E701,
 					Usage: "Set the radio address (default is address: E7E7E7E701)",
 				},
 			},
@@ -90,11 +88,12 @@ func main() {
 	}
 
 	// Initalize the radio and cache
-	err := crazyradio.Start()
+	radio, err := crazyradio.Open()
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalln(err)
 	}
-	defer crazyradio.Stop()
+	defer radio.Close()
+
 	cache.Init()
 
 	app.Run(os.Args)
@@ -104,23 +103,36 @@ func testCommand(context *cli.Context) error {
 	channel := uint8(context.Uint("channel"))
 	address := context.Uint64("address")
 
-	cf, err := crazyflie.Connect(0, 0)
+	radio, err := crazyradio.Open()
 	if err != nil {
-		return err
+		log.Println(err)
 	}
 
-	cf.MemCommitAddress(address)
-	cf.MemCommitChannel(channel)
-	cf.MemCommitSpeed(2)
-	err = cf.MemPushCommits()
+	cf, err := crazyflie.Connect(radio, channel, address)
 	if err != nil {
+		log.Printf("Error1 (%d:0x%X): %s\n", channel, address, err)
 		return err
+	}
+	err = cf.LogTOCGetList()
+	if err != nil {
+		log.Printf("Error2 (%d:0x%X): %s\n", channel, address, err)
+		return err
+	}
+	if cf.Status() == crazyflie.StatusConnected {
+		log.Printf("Success (%d:0x%X)\n", channel, address)
+	} else {
+		log.Printf("No Success (%d:0x%X)\n", channel, address)
 	}
 
 	return nil
 }
 
 func testConnectionCommand(context *cli.Context) error {
+	radio, err := crazyradio.Open()
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	// connect to each crazyflie
 	channel := uint8(context.Uint("channel"))
 	addresses := strings.Split(context.String("address"), ",")
@@ -165,7 +177,7 @@ func testConnectionCommand(context *cli.Context) error {
 		fmt.Printf("0x%X: ", address)
 
 		// connect to each crazyflie
-		cf, err := crazyflie.Connect(address, channel)
+		cf, err := crazyflie.Connect(radio, channel, address)
 		if err != nil {
 			fmt.Printf("Error (%s)\n", address, err)
 			continue
@@ -182,6 +194,12 @@ func testConnectionCommand(context *cli.Context) error {
 }
 
 func flashCommand(context *cli.Context) error {
+
+	radio, err := crazyradio.Open()
+	if err != nil {
+		log.Println(err)
+		return err
+	}
 
 	channel := uint8(context.Uint("channel"))
 	addresses := strings.Split(context.String("address"), ",")
@@ -241,16 +259,16 @@ func flashCommand(context *cli.Context) error {
 	}
 
 	// Prepare to connect to multiple crazyflies for parallel flashing
-	progressBars := make([]*pb.ProgressBar, 0, len(addressSlice))
+	//progressBars := make([]*pb.ProgressBar, 0, len(addressSlice))
 	progressChannels := make([]chan int, 0, len(addressSlice))
 	crazyflies := make([]*crazyflie.Crazyflie, 0, len(addressSlice))
 
 	for _, address := range addressSlice {
 
 		// connect to each crazyflie
-		cf, err := crazyflie.Connect(address, channel)
+		cf, err := crazyflie.Connect(radio, channel, address)
 		if err != nil {
-			log.Printf("Error connecting to 0x%X: %s", address, err)
+			log.Printf("Error connecting to 0x%X: %s\n", address, err)
 			continue
 		}
 
@@ -258,10 +276,10 @@ func flashCommand(context *cli.Context) error {
 		crazyflies = append(crazyflies, cf)
 
 		// for each successful connection, initiate a progress bar
-		progressBar := pb.New(len(flashData)).Prefix(fmt.Sprintf("Flashing 0x%X", address))
-		progressBar.ShowTimeLeft = true
-		progressBar.SetUnits(pb.U_BYTES)
-		progressBars = append(progressBars, progressBar)
+		//progressBar := pb.New(len(flashData)).Prefix(fmt.Sprintf("Flashing 0x%X", address))
+		//progressBar.ShowTimeLeft = true
+		//progressBar.SetUnits(pb.U_BYTES)
+		//progressBars = append(progressBars, progressBar)
 
 		// and initiate a progress channel
 		progressChannel := make(chan int, 5)
@@ -270,9 +288,10 @@ func flashCommand(context *cli.Context) error {
 		// now start a goroutine to update the bar!
 		go func() {
 			for {
-				progress, more := <-progressChannel
+				_, more := <-progressChannel
 				if more {
-					progressBar.Add(progress)
+					fmt.Print(".")
+					//progressBar.Add(progress)
 				} else {
 					return
 				}
@@ -281,7 +300,7 @@ func flashCommand(context *cli.Context) error {
 	}
 
 	// start all progress bars
-	pool, err := pb.StartPool(progressBars...)
+	//pool, err := pb.StartPool(progressBars...)
 
 	// start the goroutines to flash
 	wg := new(sync.WaitGroup)
@@ -290,7 +309,7 @@ func flashCommand(context *cli.Context) error {
 
 		go func(i int) {
 			cf := crazyflies[i]
-			pb := progressBars[i]
+			//pb := progressBars[i]
 			pc := progressChannels[i]
 
 			switch targetString {
@@ -307,14 +326,14 @@ func flashCommand(context *cli.Context) error {
 			default:
 			}
 
-			pb.Finish()
+			//pb.Finish()
 			cf.DisconnectImmediately()
 			close(pc)
 			wg.Done()
 		}(idx)
 	}
 	wg.Wait()
-	pool.Stop()
+	//pool.Stop()
 
 	<-time.After(1 * time.Second)
 

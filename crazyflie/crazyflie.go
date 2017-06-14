@@ -57,11 +57,11 @@ type Crazyflie struct {
 }
 
 func Connect(crtpDevice crtpdevice.CrtpDevice, channel uint8, address uint64) (*Crazyflie, error) {
-	cf := new(Crazyflie)
-	cf.crtpDevice = crtpDevice
-
-	cf.firmwareAddress = address // we save explicitly the firmware address and channel since a restart to bootloader will overwrite the current radio settings
-	cf.firmwareChannel = channel
+	cf := &Crazyflie{
+		crtpDevice:      crtpDevice,
+		firmwareAddress: address, // we save explicitly the firmware address and channel since a restart to bootloader will overwrite the current radio settings
+		firmwareChannel: channel,
+	}
 
 	err := cf.connect(channel, address)
 	if err != nil {
@@ -87,14 +87,19 @@ func (cf *Crazyflie) connect(channel uint8, address uint64) error {
 	cf.paramSystemInit()
 	cf.memSystemInit()
 
+	// now we wait for something to happen...
+	greedyResponse := &UtilityResponseGreedy{}
+	responseErrorChannel, stopAwaiting := cf.PacketStartAwaiting(greedyResponse)
+	defer stopAwaiting()
+
 	cf.crtpDevice.ClientRegister(cf.channel, cf.address, cf.responseHandler)
 
-	//err = cf.memReadContents()
-	//if err != nil {
-	//	return err
-	//}
-
-	return nil
+	select {
+	case err := <-responseErrorChannel:
+		return err
+	case <-time.After(DEFAULT_RESPONSE_TIMEOUT):
+		return ErrorNoResponse
+	}
 }
 
 func (cf *Crazyflie) Address() uint64 {
