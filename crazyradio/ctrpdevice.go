@@ -2,16 +2,11 @@ package crazyradio
 
 // Functions implementing the CrtpDevice interface
 
-import (
-	"fmt"
-
-	"github.com/mikehamer/crazyserver/crtp"
-)
+import "github.com/mikehamer/crazyserver/crtp"
 
 func (cr *Radio) ClientRegister(channel uint8, address uint64, callback func([]byte)) {
 	cr.clientCallbackSet(channel, address, callback)
 	cr.clientPacketQueueGet(channel, address) // initializes if non existent
-	fmt.Printf("New client %d:0x%X\n", channel, address)
 }
 
 func (cr *Radio) ClientRemove(channel uint8, address uint64) {

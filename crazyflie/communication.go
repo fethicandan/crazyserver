@@ -65,13 +65,14 @@ func (cf *Crazyflie) PacketSendPriorityAndAwaitResponse(requestPacket crtp.Reque
 	return cf.packetCustomSendAndAwaitResponse(cf.PacketSendPriority, requestPacket, responsePacket, timeout)
 }
 
-func (cf *Crazyflie) PacketStartAwaiting(responsePacket crtp.ResponsePacketPtr) (chan error, func()) {
+func (cf *Crazyflie) PacketStartAwaiting(awaitPacket crtp.ResponsePacketPtr) (chan error, func()) {
 	callbackError := make(chan error)
 	callback := func(resp []byte) {
 		header := crtp.Header(resp[0])
 
-		if responsePacket.Port() == crtp.PortGreedy || (responsePacket.Port() == header.Port() && responsePacket.Channel() == header.Channel()) {
-			err := responsePacket.LoadFromBytes(resp)
+		if (awaitPacket.Port() == crtp.PortGreedy) || //
+			(header.Port() == awaitPacket.Port() && header.Channel() == awaitPacket.Channel()) {
+			err := awaitPacket.LoadFromBytes(resp)
 			if err == crtp.ErrorPacketIncorrectType {
 				// if the packet is not the correct one, silently fail and keep waiting
 				return
@@ -84,10 +85,10 @@ func (cf *Crazyflie) PacketStartAwaiting(responsePacket crtp.ResponsePacketPtr) 
 
 	// add the callback to the list
 	// note that this callback will be called for every CRTP packet on this port
-	e := cf.responseCallbacks[responsePacket.Port()].PushBack(callback)
+	e := cf.responseCallbacks[awaitPacket.Port()].PushBack(callback)
 	// and remove it once we're done
 
-	stopAwaiting := func() { cf.responseCallbacks[responsePacket.Port()].Remove(e) }
+	stopAwaiting := func() { cf.responseCallbacks[awaitPacket.Port()].Remove(e) }
 
 	return callbackError, stopAwaiting
 }
@@ -119,23 +120,21 @@ func (cf *Crazyflie) responseHandler(resp []byte) {
 	cf.status = StatusConnected
 	cf.statusTimeout.Reset(statusTimeoutDuration)
 
-	if len(resp) > 0 {
-		header := crtp.Header(resp[0])
-
-		//
-		//if resp[0] == crtp.PortEmpty1 || resp[0] == crtp.PortEmpty2 {
-		//	return // CF has nothing to report
-		//}
-
-		// call any registered callbacks for this port
-		for e := cf.responseCallbacks[header.Port()].Front(); e != nil; e = e.Next() {
-			f := e.Value.(func(r []byte))
-			go f(resp) // TODO: send them copies? otherwise they can modify underlying data?
-		}
-
-		for e := cf.responseCallbacks[crtp.PortGreedy].Front(); e != nil; e = e.Next() {
-			f := e.Value.(func(r []byte))
-			go f(resp)
-		}
+	if len(resp) == 0 { // if the response is empty (only happens in bootloader mode), pretend we received an empty queue response
+		resp = []byte{crtp.PortEmpty1}
 	}
+
+	header := crtp.Header(resp[0])
+
+	// call any registered callbacks for this port
+	for e := cf.responseCallbacks[header.Port()].Front(); e != nil; e = e.Next() {
+		f := e.Value.(func(r []byte))
+		go f(resp) // TODO: send them copies? otherwise they can modify underlying data?
+	}
+
+	for e := cf.responseCallbacks[crtp.PortGreedy].Front(); e != nil; e = e.Next() {
+		f := e.Value.(func(r []byte))
+		go f(resp)
+	}
+
 }

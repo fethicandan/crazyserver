@@ -6,7 +6,7 @@ import (
 	"github.com/mikehamer/crazyserver/crtp"
 )
 
-// ---- BOOTLOADER REQUEST: GET INFO ----
+// ---- BOOTLOADER REQUEST: INIT ----
 type BootloaderRequestInit struct{}
 
 func (p *BootloaderRequestInit) Port() crtp.Port {

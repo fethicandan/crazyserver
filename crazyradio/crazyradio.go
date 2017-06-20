@@ -84,7 +84,6 @@ func (cr *Radio) radioThread(radio *RadioDevice) {
 
 		select {
 		case <-cr.radioThreadShouldStop:
-			fmt.Println("Dying...")
 			return // here no need to workWaitGroup.Done() since we haven't received work
 		case channel = <-cr.radioWorkQueue:
 		}
@@ -96,6 +95,7 @@ func (cr *Radio) radioThread(radio *RadioDevice) {
 			case <-cr.radioThreadShouldStop:
 				break addressLoop // prematurely finish the work
 			default:
+				//fmt.Printf("Service %d:0x%X\n", channel, address)
 			}
 
 			var currentQueue *queue.Queue = nil
@@ -104,16 +104,26 @@ func (cr *Radio) radioThread(radio *RadioDevice) {
 			if frontPacket, err := addressQueue.priorityQueue.Peek(); err == nil {
 				currentQueue = addressQueue.priorityQueue
 				packet = frontPacket.([]byte)
-				fmt.Printf("Priority %d:0x%X — %v\n", channel, address, packet)
+				//fmt.Printf("Priority %d:0x%X — %v\n", channel, address, packet)
 			} else if frontPacket, err := addressQueue.standardQueue.Peek(); err == nil {
 				currentQueue = addressQueue.standardQueue
 				packet = frontPacket.([]byte)
-				fmt.Printf("Standard %d:0x%X — %v\n", channel, address, packet)
+				//fmt.Printf("Standard %d:0x%X — %v\n", channel, address, packet)
 			}
 
-			radio.SetChannel(channel)
-			radio.SetAddress(address)
-			err := radio.SendPacket(packet)
+			err := radio.SetChannel(channel)
+			if err != nil {
+				fmt.Printf("Error setting channel: %v\n", err)
+				continue
+			}
+
+			err = radio.SetAddress(address)
+			if err != nil {
+				fmt.Printf("Error setting address: %v\n", err)
+				continue
+			}
+
+			err = radio.SendPacket(packet)
 			if err != nil {
 				fmt.Printf("Error sending packet: %v\n", err)
 				continue
