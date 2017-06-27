@@ -96,10 +96,14 @@ func (cf *Crazyflie) connect(channel uint8, address uint64) error {
 
 	select {
 	case err := <-responseErrorChannel:
-		return err
+		if err != nil {
+			return err
+		}
 	case <-time.After(DEFAULT_RESPONSE_TIMEOUT):
 		return ErrorNoResponse
 	}
+
+	return nil
 }
 
 func (cf *Crazyflie) Address() uint64 {

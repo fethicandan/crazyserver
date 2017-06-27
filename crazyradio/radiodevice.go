@@ -1,24 +1,25 @@
 package crazyradio
 
 import (
-	"sync"
-
 	"time"
 
 	"github.com/kylelemons/gousb/usb"
 )
 
-type RadioDevice struct {
+type radioDevice struct {
 	device  *usb.Device
-	lock    *sync.Mutex
+	context *usb.Context
 	dataOut usb.Endpoint
 	dataIn  usb.Endpoint
 	address uint64
 }
 
-var usbContext *usb.Context
+func openRadio(dev *usb.Device, ctx *usb.Context) (*radioDevice, error) {
 
-func OpenRadio(dev *usb.Device) (*RadioDevice, error) {
+	dev.ControlTimeout = 250 * time.Millisecond
+	dev.ReadTimeout = 50 * time.Millisecond
+	dev.WriteTimeout = 50 * time.Millisecond
+
 	// open the endpoint for transfers out
 	dOut, err := dev.OpenEndpoint(1, 0, 0, 0x01)
 
@@ -35,14 +36,10 @@ func OpenRadio(dev *usb.Device) (*RadioDevice, error) {
 		return nil, err
 	}
 
-	dev.ControlTimeout = 250 * time.Millisecond
-	dev.ReadTimeout = 50 * time.Millisecond
-	dev.WriteTimeout = 50 * time.Millisecond
-
 	// now have a usb device and context pointing to the Radio!
-	radio := new(RadioDevice)
-	radio.lock = new(sync.Mutex)
+	radio := new(radioDevice)
 	radio.device = dev
+	radio.context = ctx
 	radio.dataOut = dOut
 	radio.dataIn = dIn
 
@@ -56,7 +53,7 @@ func OpenRadio(dev *usb.Device) (*RadioDevice, error) {
 	return radio, nil
 }
 
-func openAllRadios() ([]*RadioDevice, error) {
+func openAllRadios() ([]*radioDevice, error) {
 	usbContext := usb.NewContext()
 	usbContext.Debug(0)
 
@@ -73,10 +70,10 @@ func openAllRadios() ([]*RadioDevice, error) {
 		return nil, ErrorDeviceNotFound
 	}
 
-	radios := make([]*RadioDevice, 0, len(radioDevices))
+	radios := make([]*radioDevice, 0, len(radioDevices))
 
 	for _, radioDevice := range radioDevices {
-		radio, err := OpenRadio(radioDevice)
+		radio, err := openRadio(radioDevice, usbContext)
 		if err == nil {
 			radios = append(radios, radio)
 		}
@@ -90,19 +87,12 @@ func openAllRadios() ([]*RadioDevice, error) {
 	return radios, nil
 }
 
-func (radio *RadioDevice) Close() {
+func (radio *radioDevice) Close() {
 	radio.device.Close()
+	radio.context.Close()
 }
 
-func (radio *RadioDevice) Lock() {
-	radio.lock.Lock()
-}
-
-func (radio *RadioDevice) Unlock() {
-	radio.lock.Unlock()
-}
-
-func (radio *RadioDevice) SetChannel(channel uint8) error {
+func (radio *radioDevice) SetChannel(channel uint8) error {
 	if channel > 125 {
 		return ErrorInvalidChannel
 	}
@@ -111,7 +101,7 @@ func (radio *RadioDevice) SetChannel(channel uint8) error {
 	return err
 }
 
-func (radio *RadioDevice) SetDatarate(datarate radioDatarate) error {
+func (radio *radioDevice) SetDatarate(datarate radioDatarate) error {
 	if datarate > RadioDatarate_2MPS {
 		return ErrorInvalidDatarate
 	}
@@ -120,7 +110,7 @@ func (radio *RadioDevice) SetDatarate(datarate radioDatarate) error {
 	return err
 }
 
-func (radio *RadioDevice) SetPower(power radioPower) error {
+func (radio *radioDevice) SetPower(power radioPower) error {
 	if power > RadioPower_0DBM {
 		return ErrorInvalidPower
 	}
@@ -129,7 +119,7 @@ func (radio *RadioDevice) SetPower(power radioPower) error {
 	return err
 }
 
-func (radio *RadioDevice) SetArc(arc uint8) error {
+func (radio *radioDevice) SetArc(arc uint8) error {
 	if arc > 15 {
 		return ErrorInvalidArc
 	}
@@ -138,7 +128,7 @@ func (radio *RadioDevice) SetArc(arc uint8) error {
 	return err
 }
 
-func (radio *RadioDevice) SetArdTime(delay uint8) error {
+func (radio *radioDevice) SetArdTime(delay uint8) error {
 	// Auto Retransmit Delay:
 	// 0x00 - Wait 250uS
 	// 0x01 - Wait 500uS
@@ -153,7 +143,7 @@ func (radio *RadioDevice) SetArdTime(delay uint8) error {
 	return err
 }
 
-func (radio *RadioDevice) SetArdBytes(nbytes uint8) error {
+func (radio *radioDevice) SetArdBytes(nbytes uint8) error {
 	// 0x00 - 0 Byte
 	// 0x01 - 1 Byte
 	// ........
@@ -166,12 +156,12 @@ func (radio *RadioDevice) SetArdBytes(nbytes uint8) error {
 	return err
 }
 
-func (radio *RadioDevice) SetAckEnable(enable uint8) error {
+func (radio *radioDevice) SetAckEnable(enable uint8) error {
 	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_ACK_ENABLE), uint16(enable), 0, nil)
 	return err
 }
 
-func (radio *RadioDevice) SetAddress(address uint64) error {
+func (radio *radioDevice) SetAddress(address uint64) error {
 	if radio.address == address {
 		return nil
 	}
@@ -197,7 +187,7 @@ func (radio *RadioDevice) SetAddress(address uint64) error {
 	return err
 }
 
-func (radio *RadioDevice) SendPacket(data []byte) error {
+func (radio *radioDevice) SendPacket(data []byte) error {
 	// write the outgoing packet
 	length, err := radio.dataOut.Write(data)
 	if err != nil {
@@ -209,7 +199,7 @@ func (radio *RadioDevice) SendPacket(data []byte) error {
 	return nil
 }
 
-func (radio *RadioDevice) ReadResponse() (bool, []byte, error) {
+func (radio *radioDevice) ReadResponse() (bool, []byte, error) {
 	// read the acknowledgement
 	resp := make([]byte, 40) // largest packet size
 	length, err := radio.dataIn.Read(resp)

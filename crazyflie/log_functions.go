@@ -109,7 +109,6 @@ func (cf *Crazyflie) LogTOCGetList() error {
 		for k, v := range cf.logNameToIndex {
 			cf.logIndexToName[v.ID] = k
 		}
-		log.Printf("Uncached Log TOC Size %d with CRC %X", len(cf.logNameToIndex), crc)
 		return nil
 	}
 
@@ -134,8 +133,6 @@ func (cf *Crazyflie) LogTOCGetList() error {
 
 		//log.Printf("%d/%d -> %s (%d)", response.ID, cf.logCount, response.Name, response.Datatype)
 	}
-
-	log.Printf("Loaded Log TOC Size %d with CRC %X", cf.logCount, cf.logCRC)
 
 	err = cache.SaveLog(crc, &cf.logNameToIndex)
 	if err != nil {

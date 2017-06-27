@@ -41,6 +41,18 @@ func (cf *Crazyflie) MemCommitAddress(address uint64) {
 	copy(cf.memoryContents[memOffsetAddress+1:memOffsetAddress+5], uint32ToBytes(lower))
 }
 
+func (cf *Crazyflie) MemReadChannelAddress() (uint8, uint64, error) {
+	err := cf.MemReadContents()
+	if err != nil {
+		return 0, 0, err
+	}
+
+	firmwareAddress := uint64(bytesToUint32(cf.memoryContents[memOffsetAddress+1:memOffsetAddress+5]).(uint32)) | (uint64(cf.memoryContents[memOffsetAddress]) << 32)
+	firmwareChannel := uint8(cf.memoryContents[memOffsetChannel])
+
+	return firmwareChannel, firmwareAddress, nil
+}
+
 func (cf *Crazyflie) MemPushCommits() error {
 	cf.memoryContents[memLength-1] = memChecksum256(cf.memoryContents[0 : memLength-1])
 
@@ -52,7 +64,7 @@ func (cf *Crazyflie) MemPushCommits() error {
 		return err
 	}
 
-	err = cf.memReadContents()
+	err = cf.MemReadContents()
 	if err != nil {
 		return err
 	}
@@ -67,11 +79,10 @@ func (cf *Crazyflie) MemPushCommits() error {
 	cf.firmwareAddress = uint64(bytesToUint32(cf.memoryContents[memOffsetAddress+1:memOffsetAddress+5]).(uint32)) | (uint64(cf.memoryContents[memOffsetAddress]) << 32)
 	cf.firmwareChannel = uint8(cf.memoryContents[memOffsetChannel])
 
-	cf.RebootToFirmware()
 	return nil
 }
 
-func (cf *Crazyflie) memReadContents() error {
+func (cf *Crazyflie) MemReadContents() error {
 	var err error = nil
 
 	for retries := 0; retries < 5; retries++ {
@@ -87,9 +98,6 @@ func (cf *Crazyflie) memReadContents() error {
 
 		copy(cf.memoryContents, data)
 		break
-	}
-	if err == nil {
-		fmt.Println(cf.memoryContents)
 	}
 	return err
 }

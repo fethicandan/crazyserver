@@ -1,7 +1,7 @@
 package crazyflie
 
 import (
-	"log"
+	"fmt"
 	"time"
 )
 
@@ -34,8 +34,6 @@ func (cf *Crazyflie) RebootToFirmware() error {
 
 	<-time.After(500 * time.Millisecond)
 
-	log.Printf("New Address: 0x%X\n", responsePacket.NewAddress)
-
 	return cf.connect(cf.firmwareChannel, cf.firmwareAddress)
 }
 
@@ -66,7 +64,7 @@ func (cf *Crazyflie) RebootToBootloader() error {
 
 	<-time.After(500 * time.Millisecond)
 
-	log.Printf("New Address: 0x%X\n", responsePacket.NewAddress)
+	fmt.Printf("Connecting to %d:0x%X\n", 0, responsePacket.NewAddress)
 
 	return cf.connect(0, responsePacket.NewAddress)
 }

@@ -19,9 +19,9 @@ var defaultPacket = []byte{0xFF}
 var singletonRadio *Radio = nil
 
 type Radio struct {
-	radios                []*RadioDevice
-	radioWorkQueue        chan uint8
-	radioThreadShouldStop chan bool
+	radios           []*radioDevice
+	workQueue        chan uint8
+	threadShouldStop chan bool
 
 	packetQueues map[uint8]map[uint64]*packetQueue
 	callbacks    map[uint8]map[uint64]func([]byte)
@@ -41,9 +41,9 @@ func Open() (*Radio, error) {
 	}
 
 	singletonRadio = &Radio{
-		radios:                radios,
-		radioWorkQueue:        make(chan uint8, 256),
-		radioThreadShouldStop: make(chan bool),
+		radios:           radios,
+		workQueue:        make(chan uint8, 256),
+		threadShouldStop: make(chan bool),
 
 		packetQueues: make(map[uint8]map[uint64]*packetQueue),
 		callbacks:    make(map[uint8]map[uint64]func([]byte)),
@@ -66,7 +66,7 @@ func Open() (*Radio, error) {
 }
 
 func (cr *Radio) Close() {
-	close(cr.radioThreadShouldStop)
+	close(cr.threadShouldStop)
 	cr.globalWaitGroup.Wait()
 
 	for _, r := range cr.radios {
@@ -76,23 +76,23 @@ func (cr *Radio) Close() {
 	singletonRadio = nil
 }
 
-func (cr *Radio) radioThread(radio *RadioDevice) {
+func (cr *Radio) radioThread(radio *radioDevice) {
 	defer cr.globalWaitGroup.Done()
 
 	for {
 		var channel uint8
 
 		select {
-		case <-cr.radioThreadShouldStop:
+		case <-cr.threadShouldStop:
 			return // here no need to workWaitGroup.Done() since we haven't received work
-		case channel = <-cr.radioWorkQueue:
+		case channel = <-cr.workQueue:
 		}
 
 	addressLoop:
 		for address, addressQueue := range cr.packetQueues[channel] {
 			// quit if we should quit
 			select {
-			case <-cr.radioThreadShouldStop:
+			case <-cr.threadShouldStop:
 				break addressLoop // prematurely finish the work
 			default:
 				//fmt.Printf("Service %d:0x%X\n", channel, address)
@@ -162,7 +162,7 @@ func (cr *Radio) coordinatorThread() {
 	for {
 		// quit if we should quit
 		select {
-		case <-cr.radioThreadShouldStop:
+		case <-cr.threadShouldStop:
 			return
 		default:
 		}
@@ -174,7 +174,7 @@ func (cr *Radio) coordinatorThread() {
 
 		for channel := range cr.packetQueues { // loop through all channels
 			cr.workWaitGroup.Add(1)
-			cr.radioWorkQueue <- channel
+			cr.workQueue <- channel
 		}
 		cr.workWaitGroup.Wait() // wait for all work to be processed, ensures that only one radio operates per channel
 	}

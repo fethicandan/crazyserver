@@ -1,10 +1,6 @@
 package crazyflie
 
-import (
-	"log"
-
-	"github.com/mikehamer/crazyserver/crtp"
-)
+import "github.com/mikehamer/crazyserver/crtp"
 
 // ---- BOOTLOADER REQUEST: INIT ----
 type BootloaderRequestInit struct{}
@@ -71,8 +67,6 @@ func (p *BootloaderResponseAddress) LoadFromBytes(b []byte) error {
 	if b[0] != 0xFF || len(b) < 7 { //we're dealing with the incorrect packet
 		return crtp.ErrorPacketIncorrectType
 	}
-
-	log.Println("Got bootloader response bytes: ", b)
 
 	p.NewAddress = uint64(b[3]) | (uint64(b[4]) << 8) | (uint64(b[5]) << 16) | (uint64(b[6]) << 24) | (uint64(0xb1) << 32)
 
