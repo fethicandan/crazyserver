@@ -185,7 +185,7 @@ func (crtpUsb *usbDevice) ReadResponse() ([]byte, error) {
 	resp := make([]byte, 40) // largest packet size
 	length, err := crtpUsb.dataIn.Read(resp)
 
-	if err == usb.LIBUSB_TRANSFER_TIMED_OUT {
+	if err == usb.LIBUSB_TRANSFER_TIMED_OUT || err == usb.ERROR_TIMEOUT {
 		return []byte{crtp.PortEmpty1}, nil //emulate the empty queue packet, since USB just times out on empty queue
 	}
 
