@@ -26,6 +26,7 @@ func (cf *Crazyflie) communicationSystemInit() {
 		crtp.PortPosition: list.New(),
 		crtp.PortPlatform: list.New(),
 		crtp.PortLink:     list.New(),
+		crtp.PortDNN:	   list.New(),
 		crtp.PortEmpty1:   list.New(),
 		crtp.PortEmpty2:   list.New(),
 		crtp.PortGreedy:   list.New(),

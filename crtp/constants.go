@@ -1,5 +1,6 @@
 package crtp
 
+// IMPORTANT: If you add a port here, you need to add an entry to cf.responseCallbacks in communication.go!!!
 const (
 	PortConsole  Port = 0x00
 	PortParam         = 0x02
@@ -7,6 +8,8 @@ const (
 	PortMem           = 0x04
 	PortLog           = 0x05
 	PortPosition      = 0x06
+	PortControl       = 0x07
+	PortDNN           = 0x08
 	PortPlatform      = 0x0D
 	PortLink          = 0x0F
 	PortEmpty1        = 0xF3 // This is not an actual CRTP ports (since ports are 4 bit). This indicates an empty queue on the CF.

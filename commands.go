@@ -46,5 +46,24 @@ var COMMANDS = []cli.Command{
 		},
 		Action: flashCommand,
 	},
+
+	{
+		Name:      "test",
+		Usage:     "Test Something",
+		ArgsUsage: "",
+		Flags: []cli.Flag{
+			cli.UintFlag{
+				Name:  "channel",
+				Value: 10,
+				Usage: "Set the radio channel (default is channel 10)",
+			},
+			cli.StringFlag{
+				Name:  "address",
+				Value: "0xE7E7E7E701",
+				Usage: "Set the radio address (default is address 0xE7E7E7E701)",
+			},
+		},
+		Action: testCommand,
+	},
 	crazyserver.ServeCommand,
 }
