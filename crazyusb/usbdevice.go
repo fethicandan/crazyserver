@@ -7,26 +7,28 @@ import (
 
 	"reflect"
 
-	"github.com/kylelemons/gousb/usb"
+	"github.com/google/gousb"
 	"github.com/mikehamer/crazyserver/crtp"
 )
 
 type usbDevice struct {
-	device  *usb.Device
-	context *usb.Context
-	dataOut usb.Endpoint
-	dataIn  usb.Endpoint
+	device  *gousb.Device
+	context *gousb.Context
+	config  *gousb.Config
+	iface   *gousb.Interface
+	dataIn  *gousb.InEndpoint
+	dataOut *gousb.OutEndpoint
 }
 
 func WaitForCrazyflieDisconnect() {
-	usbContext := usb.NewContext()
+	usbContext := gousb.NewContext()
 	defer usbContext.Close()
 
 	count := 0
 	for {
 		count = 0
-		usbContext.ListDevices(
-			func(desc *usb.Descriptor) bool {
+		usbContext.OpenDevices(
+			func(desc *gousb.DeviceDesc) bool {
 				if desc.Vendor == 0x0483 && desc.Product == 0x5740 {
 					count += 1
 				}
@@ -40,12 +42,12 @@ func WaitForCrazyflieDisconnect() {
 }
 
 func CountConnectedCrazyflies() int {
-	usbContext := usb.NewContext()
+	usbContext := gousb.NewContext()
 	defer usbContext.Close()
 
 	count := 0
-	usbContext.ListDevices(
-		func(desc *usb.Descriptor) bool {
+	usbContext.OpenDevices(
+		func(desc *gousb.DeviceDesc) bool {
 			if desc.Vendor == 0x0483 && desc.Product == 0x5740 {
 				count += 1
 			}
@@ -56,14 +58,14 @@ func CountConnectedCrazyflies() int {
 }
 
 func WaitForCrazyflie() {
-	usbContext := usb.NewContext()
+	usbContext := gousb.NewContext()
 	defer usbContext.Close()
 
 	count := 0
 	for {
 		count = 0
-		usbContext.ListDevices(
-			func(desc *usb.Descriptor) bool {
+		usbContext.OpenDevices(
+			func(desc *gousb.DeviceDesc) bool {
 				if desc.Vendor == 0x0483 && desc.Product == 0x5740 {
 					count += 1
 				}
@@ -77,11 +79,11 @@ func WaitForCrazyflie() {
 }
 
 func openUsbDevice() (*usbDevice, error) {
-	usbContext := usb.NewContext()
+	usbContext := gousb.NewContext()
 	usbContext.Debug(0)
 
-	usbDevices, _ := usbContext.ListDevices(
-		func(desc *usb.Descriptor) bool {
+	usbDevices, _ := usbContext.OpenDevices(
+		func(desc *gousb.DeviceDesc) bool {
 			if desc.Vendor == 0x0483 && desc.Product == 0x5740 {
 				return true
 			}
@@ -104,36 +106,49 @@ func openUsbDevice() (*usbDevice, error) {
 	dev := usbDevices[0]
 
 	dev.ControlTimeout = 200 * time.Millisecond
-	dev.ReadTimeout = 20 * time.Millisecond
-	dev.WriteTimeout = 20 * time.Millisecond
-
-	// open the endpoint for transfers out
-	dOut, err := dev.OpenEndpoint(1, 0, 0, 0x01)
-
+	cfg, err := dev.Config(1)
 	if err != nil {
 		dev.Close()
 		usbContext.Close()
 		return nil, err
 	}
 
-	// open the endpoint for transfers in
-	dIn, err := dev.OpenEndpoint(1, 0, 0, 0x81)
-
+	// In the config #2, claim interface #3 with alt setting #0.
+	iface, err := cfg.Interface(0, 0)
 	if err != nil {
+		cfg.Close()
+		dev.Close()
+		usbContext.Close()
+		return nil, err
+	}
+
+	// In this interface open endpoint #6 for reading.
+	dIn, err := iface.InEndpoint(1)
+	if err != nil {
+		iface.Close()
+		cfg.Close()
+		dev.Close()
+		usbContext.Close()
+		return nil, err
+	}
+
+	// And in the same interface open endpoint #5 for writing.
+	dOut, err := iface.OutEndpoint(1)
+	if err != nil {
+		iface.Close()
+		cfg.Close()
 		dev.Close()
 		usbContext.Close()
 		return nil, err
 	}
 
 	// now have a usb device and context pointing to the crazyflie!
-	crtpUsb := new(usbDevice)
-	crtpUsb.context = usbContext
-	crtpUsb.device = dev
-	crtpUsb.dataOut = dOut
-	crtpUsb.dataIn = dIn
+	crtpUsb := &usbDevice{dev, usbContext, cfg, iface, dIn, dOut}
 
 	err = crtpUsb.DisableCRTP()
 	if err != nil {
+		iface.Close()
+		cfg.Close()
 		dev.Close()
 		usbContext.Close()
 		return nil, err
@@ -141,6 +156,8 @@ func openUsbDevice() (*usbDevice, error) {
 
 	err = crtpUsb.EnableCRTP()
 	if err != nil {
+		iface.Close()
+		cfg.Close()
 		dev.Close()
 		usbContext.Close()
 		return nil, err
@@ -151,18 +168,20 @@ func openUsbDevice() (*usbDevice, error) {
 
 func (crtpUsb *usbDevice) EnableCRTP() error {
 	// enable CRTP over USB
-	_, err := crtpUsb.device.Control(usb.REQUEST_TYPE_VENDOR, 0x01, 0x01, 1, nil)
+	_, err := crtpUsb.device.Control(gousb.RequestTypeVendor, 0x01, 0x01, 1, nil)
 	return err
 }
 
 func (crtpUsb *usbDevice) DisableCRTP() error {
 	// enable CRTP over USB
-	_, err := crtpUsb.device.Control(usb.REQUEST_TYPE_VENDOR, 0x01, 0x01, 0, nil)
+	_, err := crtpUsb.device.Control(gousb.RequestTypeVendor, 0x01, 0x01, 0, nil)
 	return err
 }
 
 func (crtpUsb *usbDevice) Close() {
 	crtpUsb.DisableCRTP()
+	crtpUsb.iface.Close()
+	crtpUsb.config.Close()
 	crtpUsb.device.Close()
 	crtpUsb.context.Close()
 }
@@ -185,7 +204,7 @@ func (crtpUsb *usbDevice) ReadResponse() ([]byte, error) {
 	resp := make([]byte, 40) // largest packet size
 	length, err := crtpUsb.dataIn.Read(resp)
 
-	if err == usb.LIBUSB_TRANSFER_TIMED_OUT || err == usb.ERROR_TIMEOUT {
+	if err == gousb.TransferTimedOut || err == gousb.ErrorTimeout {
 		return []byte{crtp.PortEmpty1}, nil //emulate the empty queue packet, since USB just times out on empty queue
 	}
 

@@ -45,7 +45,9 @@ func clientPacketEnqueue(queue *queue.Queue, request crtp.RequestPacketPtr) erro
 	requestBody := request.Bytes()
 	requestData := make([]byte, len(requestBody)+1)
 	requestData[0] = crtp.HeaderBytes(request.Port(), request.Channel())
-	copy(requestData[1:], requestBody)
+	if len(requestBody) > 0 {
+		copy(requestData[1:], requestBody)
+	}
 
 	return queue.Put(requestData)
 }

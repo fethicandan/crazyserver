@@ -1,47 +1,58 @@
 package crazyradio
 
-import (
-	"time"
-
-	"github.com/kylelemons/gousb/usb"
-)
+import "github.com/google/gousb"
 
 type radioDevice struct {
-	device  *usb.Device
-	context *usb.Context
-	dataOut usb.Endpoint
-	dataIn  usb.Endpoint
+	device  *gousb.Device
+	context *gousb.Context
+	config  *gousb.Config
+	iface   *gousb.Interface
+	dataIn  *gousb.InEndpoint
+	dataOut *gousb.OutEndpoint
 	address uint64
 }
 
-func openRadio(dev *usb.Device, ctx *usb.Context) (*radioDevice, error) {
+func openRadio(dev *gousb.Device, ctx *gousb.Context) (*radioDevice, error) {
 
-	dev.ControlTimeout = 250 * time.Millisecond
-	dev.ReadTimeout = 50 * time.Millisecond
-	dev.WriteTimeout = 50 * time.Millisecond
+	//dev.ControlTimeout = 250 * time.Millisecond
+	dev.SetAutoDetach(true)
+	dev.Reset()
 
-	// open the endpoint for transfers out
-	dOut, err := dev.OpenEndpoint(1, 0, 0, 0x01)
-
+	cfg, err := dev.Config(1)
 	if err != nil {
 		dev.Close()
+		ctx.Close()
 		return nil, err
 	}
 
-	// open the endpoint for transfers in
-	dIn, err := dev.OpenEndpoint(1, 0, 0, 0x81)
-
+	iface, err := cfg.Interface(0, 0)
 	if err != nil {
+		cfg.Close()
 		dev.Close()
+		ctx.Close()
+		return nil, err
+	}
+
+	dIn, err := iface.InEndpoint(1)
+	if err != nil {
+		iface.Close()
+		cfg.Close()
+		dev.Close()
+		ctx.Close()
+		return nil, err
+	}
+
+	dOut, err := iface.OutEndpoint(1)
+	if err != nil {
+		iface.Close()
+		cfg.Close()
+		dev.Close()
+		ctx.Close()
 		return nil, err
 	}
 
 	// now have a usb device and context pointing to the Radio!
-	radio := new(radioDevice)
-	radio.device = dev
-	radio.context = ctx
-	radio.dataOut = dOut
-	radio.dataIn = dIn
+	radio := &radioDevice{dev, ctx, cfg, iface, dIn, dOut, 0xE7E7E7E7E7}
 
 	// can initialize the default states!
 	radio.SetDatarate(RadioDatarate_2MPS)
@@ -54,11 +65,11 @@ func openRadio(dev *usb.Device, ctx *usb.Context) (*radioDevice, error) {
 }
 
 func openAllRadios() ([]*radioDevice, error) {
-	usbContext := usb.NewContext()
+	usbContext := gousb.NewContext()
 	usbContext.Debug(0)
 
-	radioDevices, _ := usbContext.ListDevices(
-		func(desc *usb.Descriptor) bool {
+	radioDevices, _ := usbContext.OpenDevices(
+		func(desc *gousb.DeviceDesc) bool {
 			if desc.Vendor == 0x1915 && desc.Product == 0x7777 {
 				return true
 			}
@@ -88,6 +99,8 @@ func openAllRadios() ([]*radioDevice, error) {
 }
 
 func (radio *radioDevice) Close() {
+	radio.iface.Close()
+	radio.config.Close()
 	radio.device.Close()
 	radio.context.Close()
 }
@@ -97,7 +110,7 @@ func (radio *radioDevice) SetChannel(channel uint8) error {
 		return ErrorInvalidChannel
 	}
 
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_RADIO_CHANNEL), uint16(channel), 0, nil)
+	_, err := radio.device.Control(gousb.RequestTypeVendor, uint8(SET_RADIO_CHANNEL), uint16(channel), 0, nil)
 	return err
 }
 
@@ -106,7 +119,7 @@ func (radio *radioDevice) SetDatarate(datarate radioDatarate) error {
 		return ErrorInvalidDatarate
 	}
 
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_DATA_RATE), uint16(datarate), 0, nil)
+	_, err := radio.device.Control(gousb.RequestTypeVendor, uint8(SET_DATA_RATE), uint16(datarate), 0, nil)
 	return err
 }
 
@@ -115,7 +128,7 @@ func (radio *radioDevice) SetPower(power radioPower) error {
 		return ErrorInvalidPower
 	}
 
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_RADIO_POWER), uint16(power), 0, nil)
+	_, err := radio.device.Control(gousb.RequestTypeVendor, uint8(SET_RADIO_POWER), uint16(power), 0, nil)
 	return err
 }
 
@@ -124,7 +137,7 @@ func (radio *radioDevice) SetArc(arc uint8) error {
 		return ErrorInvalidArc
 	}
 
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_RADIO_ARC), uint16(arc), 0, nil)
+	_, err := radio.device.Control(gousb.RequestTypeVendor, uint8(SET_RADIO_ARC), uint16(arc), 0, nil)
 	return err
 }
 
@@ -139,7 +152,7 @@ func (radio *radioDevice) SetArdTime(delay uint8) error {
 		return ErrorInvalidArdTime
 	}
 
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_RADIO_ARD), uint16(delay), 0, nil)
+	_, err := radio.device.Control(gousb.RequestTypeVendor, uint8(SET_RADIO_ARD), uint16(delay), 0, nil)
 	return err
 }
 
@@ -152,12 +165,12 @@ func (radio *radioDevice) SetArdBytes(nbytes uint8) error {
 		return ErrorInvalidArdBytes
 	}
 
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_RADIO_ARD), uint16(0x80|nbytes), 0, nil)
+	_, err := radio.device.Control(gousb.RequestTypeVendor, uint8(SET_RADIO_ARD), uint16(0x80|nbytes), 0, nil)
 	return err
 }
 
 func (radio *radioDevice) SetAckEnable(enable uint8) error {
-	_, err := radio.device.Control(usb.REQUEST_TYPE_VENDOR, uint8(SET_ACK_ENABLE), uint16(enable), 0, nil)
+	_, err := radio.device.Control(gousb.RequestTypeVendor, uint8(SET_ACK_ENABLE), uint16(enable), 0, nil)
 	return err
 }
 
@@ -174,7 +187,7 @@ func (radio *radioDevice) SetAddress(address uint64) error {
 	a[0] = uint8((address >> 32) & 0xFF)
 
 	_, err := radio.device.Control(
-		usb.REQUEST_TYPE_VENDOR,
+		gousb.RequestTypeVendor,
 		uint8(SET_RADIO_ADDRESS),
 		0,
 		0,
